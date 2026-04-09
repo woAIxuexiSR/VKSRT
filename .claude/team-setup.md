@@ -31,16 +31,16 @@ Agent(name: "planner", model: "ppio/pa/claude-opus-4-6", team_name: "vksrt", des
 
 ## 3. 创建任务
 
-任务是会话级别的，每次新会话需要重新创建：
+任务是会话级别的，每次新会话需要重新创建。
+M1-M3 已完成，当前任务：
 
 ```
-TaskCreate(subject: "完善简单的 ray tracing pass", description: "ray tracing pass 屏幕全黑，需要 debug 修复")
-TaskCreate(subject: "实现简单的 tone mapping pass", description: "实现后处理 tone mapping pass，并实现 renderpass 链式串联")
-TaskCreate(subject: "实现基于 assimp 的模型导入", description: "用 assimp 导入模型替代 hardcode 的 cornell box")
+TaskCreate(subject: "JSON config 驱动 pass 链", description: "实现 json 配置文件作为输入，定义 pass 链和各 pass 参数。Application 读取 config.json 后通过 RenderPassFactory 创建 pass 并自动连线。")
+TaskCreate(subject: "给 RenderPass 加 UI", description: "每个 pass 实现 drawUI()，在 ImGui 中显示 pass 参数并支持交互调整（如 tonemap 曲线参数、camera 信息、frame index 等）。")
+TaskCreate(subject: "实现基于 assimp 的模型导入", description: "用 assimp 导入模型替代 hardcode 的三角形场景")
 TaskCreate(subject: "实现更多的材质系统", description: "支持更多材质类型")
 
-TaskUpdate(taskId: "2", addBlockedBy: ["1"])
-TaskUpdate(taskId: "3", addBlockedBy: ["2"])
+TaskUpdate(taskId: "3", addBlockedBy: ["1"])
 TaskUpdate(taskId: "4", addBlockedBy: ["3"])
 ```
 

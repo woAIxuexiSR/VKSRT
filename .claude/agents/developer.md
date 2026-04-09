@@ -12,7 +12,7 @@
 
 ## Guidelines
 - 参考 EasyVulkan (`D:\works\Vscode\EasyVulkan`) 的代码风格
-- Shader 使用 Slang，不使用 GLSL
+- Shader 使用 Slang（RT shader 也使用 Slang，单文件多 entry point + [raypayload] 语法）
 - 代码标准：C++17
 - 优先编辑现有文件，避免不必要的新建文件
 - 完成任务后通过 TaskUpdate 标记任务完成
