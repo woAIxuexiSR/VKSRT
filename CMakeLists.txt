@@ -38,6 +38,10 @@ if(NOT SLANGC_EXECUTABLE)
     endif()
 endif()
 
+# Shared shader modules (import-only, not compiled to SPV independently)
+set(SLANG_SHARED_DIR "${CMAKE_SOURCE_DIR}/src/shaders")
+file(GLOB SLANG_SHARED_MODULES "${SLANG_SHARED_DIR}/*.slang")
+
 # RT slang shader: single file with all entry points compiled to one SPV
 set(RT_SLANG "${CMAKE_SOURCE_DIR}/src/passes/ray_tracing/ray_tracing.slang")
 set(RT_SLANG_DIR "${CMAKE_SOURCE_DIR}/src/passes/ray_tracing")
@@ -47,8 +51,8 @@ set(RT_SPV "${RT_OUT_DIR}/ray_tracing.spv")
 add_custom_command(
     OUTPUT ${RT_SPV}
     COMMAND ${CMAKE_COMMAND} -E make_directory "${RT_OUT_DIR}"
-    COMMAND ${SLANGC_EXECUTABLE} ${RT_SLANG} -I${RT_SLANG_DIR} -target spirv -entry raygenMain -entry missMain -entry closestHitMain -o ${RT_SPV}
-    DEPENDS ${RT_SLANG}
+    COMMAND ${SLANGC_EXECUTABLE} ${RT_SLANG} -I${RT_SLANG_DIR} -I${SLANG_SHARED_DIR} -target spirv -entry raygenMain -entry missMain -entry closestHitMain -o ${RT_SPV}
+    DEPENDS ${RT_SLANG} ${SLANG_SHARED_MODULES}
     COMMENT "Compiling ray_tracing.slang (all entries) to single SPIR-V"
 )
 list(APPEND SPIRV_BINARY_FILES ${RT_SPV})
@@ -73,8 +77,8 @@ foreach(SLANG ${SLANG_FILES})
     add_custom_command(
         OUTPUT ${SPIRV}
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders/${DIR_PATH}"
-        COMMAND ${SLANGC_EXECUTABLE} ${SLANG} -I${SLANG_DIR} -profile glsl_460 -target spirv -o ${SPIRV}
-        DEPENDS ${SLANG}
+        COMMAND ${SLANGC_EXECUTABLE} ${SLANG} -I${SLANG_DIR} -I${SLANG_SHARED_DIR} -profile glsl_460 -target spirv -o ${SPIRV}
+        DEPENDS ${SLANG} ${SLANG_SHARED_MODULES}
         COMMENT "Compiling ${FILE_NAME} to SPIR-V (slang)"
     )
 

@@ -111,23 +111,24 @@ void SceneLoader::buildCornellBox(RayTracingModel &model)
     light.emission = {1.0f, 1.0f, 1.0f, 15.0f};
     light.type = MAT_EMISSIVE;
 
-    // Floor (y=0), normal +Y
+    // Z-up coordinate system: floor z=0, ceiling z=1, open face y=0 (camera looks in from -Y)
+    // Floor (z=0), normal +Z
     addQuad(model,
-            {0, 0, 0}, {0, 0, 1}, {1, 0, 1}, {1, 0, 0}, white);
-    // Ceiling (y=1), normal -Y
-    addQuad(model,
-            {0, 1, 0}, {1, 1, 0}, {1, 1, 1}, {0, 1, 1}, white);
-    // Back wall (z=1), normal -Z
+            {0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}, white);
+    // Ceiling (z=1), normal -Z
     addQuad(model,
             {0, 0, 1}, {0, 1, 1}, {1, 1, 1}, {1, 0, 1}, white);
+    // Back wall (y=1), normal -Y
+    addQuad(model,
+            {0, 1, 0}, {1, 1, 0}, {1, 1, 1}, {0, 1, 1}, white);
     // Left wall - red (x=0), normal +X
     addQuad(model,
             {0, 0, 0}, {0, 1, 0}, {0, 1, 1}, {0, 0, 1}, red);
     // Right wall - green (x=1), normal -X
     addQuad(model,
-            {1, 0, 0}, {1, 0, 1}, {1, 1, 1}, {1, 1, 0}, green);
-    // Light (ceiling, slightly inset), normal -Y
+            {1, 1, 0}, {1, 0, 0}, {1, 0, 1}, {1, 1, 1}, green);
+    // Light (ceiling, slightly inset), normal -Z
     addQuad(model,
-            {0.35f, 0.999f, 0.35f}, {0.65f, 0.999f, 0.35f},
-            {0.65f, 0.999f, 0.65f}, {0.35f, 0.999f, 0.65f}, light);
+            {0.35f, 0.35f, 0.999f}, {0.35f, 0.65f, 0.999f},
+            {0.65f, 0.65f, 0.999f}, {0.65f, 0.35f, 0.999f}, light);
 }

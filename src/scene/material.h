@@ -23,4 +23,5 @@ struct Material
     int _pad1{0};
     int _pad2{0};
 };
-// sizeof(Material) = 64 bytes
+// Must match src/shaders/material.slang layout exactly
+static_assert(sizeof(Material) == 64, "Material must be 64 bytes to match Slang layout");

@@ -1,6 +1,10 @@
 // Ray tracing shaders: raygen, miss, closest hit
 // Compiled as single file with multiple entry points via slangc
 
+import material;
+import brdf;
+import onb;
+
 [raypayload]
 struct RayPayload
 {
@@ -16,20 +20,6 @@ struct CameraProperties
     int _pad2;
     float4x4 viewInverse;
     float4x4 projInverse;
-};
-
-struct Material
-{
-    float4 baseColor;
-    float4 emission;
-    float metallic;
-    float roughness;
-    float ior;
-    int type;
-    int diffuseTexIndex;
-    int _pad0;
-    int _pad1;
-    int _pad2;
 };
 
 [[vk::binding(0)]]
@@ -134,21 +124,45 @@ void closestHitMain(inout RayPayload payload, BuiltInTriangleIntersectionAttribu
     float3 n2 = normals[i2 + sbt.vertexOffset];
     float3 N = normalize(bary.x * n0 + bary.y * n1 + bary.z * n2);
 
-    float3 albedo = mat.baseColor.rgb;
-
     // Emissive materials emit directly
-    if (mat.type == 3)
+    if (mat.type == MAT_EMISSIVE)
     {
         payload.isHit = 1;
         payload.color = mat.emission.rgb * mat.emission.a;
         return;
     }
 
-    // Basic diffuse shading with a simple directional light + ambient
+    // Material-aware shading using BRDF/ONB interface
+    ONB basis = buildONB(N);
+    float3 wo = worldToLocal(basis, -WorldRayDirection());
+
+    // Simple directional light for single-bounce shading
     float3 lightDir = normalize(float3(0.5, 1.0, -0.3));
-    float NdotL = max(dot(N, lightDir), 0.0);
-    float3 diffuse = albedo * (0.3 + 0.7 * NdotL);
+    float3 wi = worldToLocal(basis, lightDir);
+
+    float3 f = brdfEval(wi, wo, mat);
+    float cosTheta = max(wi.z, 0.0);
+
+    // Ambient + direct lighting
+    float3 color = mat.baseColor.rgb * 0.15 + f * cosTheta * 3.0;
+
+    // Metal: add reflection tint
+    if (mat.type == MAT_METAL)
+    {
+        float NdotL = max(dot(N, lightDir), 0.0);
+        color = mat.baseColor.rgb * (0.2 + 0.8 * NdotL);
+    }
+
+    // Dielectric: basic Fresnel-tinted shading
+    if (mat.type == MAT_DIELECTRIC)
+    {
+        float cosI = max(dot(N, -WorldRayDirection()), 0.0);
+        float r0 = (1.0 - mat.ior) / (1.0 + mat.ior);
+        r0 = r0 * r0;
+        float fresnel = r0 + (1.0 - r0) * pow(1.0 - cosI, 5.0);
+        color = float3(fresnel * 0.8 + 0.1);
+    }
 
     payload.isHit = 1;
-    payload.color = diffuse;
+    payload.color = color;
 }
