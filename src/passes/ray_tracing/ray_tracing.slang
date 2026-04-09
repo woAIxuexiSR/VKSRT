@@ -69,13 +69,13 @@ void raygenMain()
     float2 inUV = pixelCenter / float2(launchSize);
     float2 d = inUV * 2.0 - 1.0;
 
-    float4 origin = mul(float4(0, 0, 0, 1), cam.viewInverse);
-    float4 target = mul(float4(d.x, d.y, 1, 1), cam.projInverse);
-    float4 direction = mul(float4(normalize(target.xyz), 0), cam.viewInverse);
+    float4 origin = mul(cam.viewInverse, float4(0, 0, 0, 1));
+    float4 target = mul(cam.projInverse, float4(d.x, d.y, 1, 1));
+    float4 direction = mul(cam.viewInverse, float4(normalize(target.xyz), 0));
 
     RayDesc ray;
     ray.Origin = origin.xyz;
-    ray.Direction = direction.xyz;
+    ray.Direction = normalize(direction.xyz);
     ray.TMin = 0.001;
     ray.TMax = 10000.0;
 
@@ -99,7 +99,7 @@ void raygenMain()
 void missMain(inout RTPayload payload)
 {
     payload.isHit = 0;
-    payload.color = float3(0.1, 0.1, 0.1);
+    payload.color = float3(1.0, 0.0, 0.0); // DEBUG: bright red to verify miss shader fires
 }
 
 [shader("closesthit")]

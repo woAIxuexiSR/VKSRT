@@ -68,6 +68,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/src/passes
     ${CMAKE_SOURCE_DIR}/src/passes/triangle
     ${CMAKE_SOURCE_DIR}/src/passes/ray_tracing
+    ${CMAKE_SOURCE_DIR}/src/passes/tonemap
 )
 include_directories(${Stb_INCLUDE_DIR})
 
