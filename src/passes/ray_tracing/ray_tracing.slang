@@ -69,9 +69,9 @@ void raygenMain()
     float2 inUV = pixelCenter / float2(launchSize);
     float2 d = inUV * 2.0 - 1.0;
 
-    float4 origin = mul(cam.viewInverse, float4(0, 0, 0, 1));
-    float4 target = mul(cam.projInverse, float4(d.x, d.y, 1, 1));
-    float4 direction = mul(cam.viewInverse, float4(normalize(target.xyz), 0));
+    float4 origin = mul(float4(0, 0, 0, 1), cam.viewInverse);
+    float4 target = mul(float4(d.x, d.y, 1, 1), cam.projInverse);
+    float4 direction = mul(float4(normalize(target.xyz), 0), cam.viewInverse);
 
     RayDesc ray;
     ray.Origin = origin.xyz;
@@ -111,6 +111,9 @@ void closesthitMain(inout RTPayload payload, in BuiltInTriangleIntersectionAttri
 
     uint primitiveID = PrimitiveIndex() + rec.indexOffset;
     uint3 idx = getIndex(primitiveID);
+    float3 v0 = getVertex(idx.x + rec.vertexOffset);
+    float3 v1 = getVertex(idx.y + rec.vertexOffset);
+    float3 v2 = getVertex(idx.z + rec.vertexOffset);
 
     float4 matColor = materials[rec.matIndex];
 
