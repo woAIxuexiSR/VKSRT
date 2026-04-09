@@ -60,9 +60,9 @@ public:
     PassImageSlot getOutput(const std::string &name) const
     {
         auto it = outputs.find(name);
-        if (it != outputs.end())
-            return it->second;
-        return {};
+        if (it == outputs.end())
+            throw std::runtime_error("PassBase::getOutput: slot '" + name + "' not found in pass '" + getName() + "'");
+        return it->second;
     }
 
     // --- Lifecycle ---

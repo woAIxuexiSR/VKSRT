@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 #include <memory>
 #include <vector>
 
@@ -24,10 +25,11 @@ public:
 
     std::vector<VkCommandBuffer> commandBuffers;
     std::vector<std::shared_ptr<PassBase>> passes;
+    std::unordered_map<std::string, std::shared_ptr<PassBase>> passMap;
     uint32_t currentFrame{0};
 
 public:
-    Application()
+    Application(const std::string &configPath)
     {
         commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 
@@ -41,17 +43,63 @@ public:
             throw std::runtime_error("failed to allocate command buffers!");
 
         RenderPassFactory::printRegistered();
+        loadConfig(configPath);
+    }
 
-        // Create passes via factory
-        passes.push_back(RenderPassFactory::createPass("ray_tracing", device, *swapChain));
-        passes.push_back(RenderPassFactory::createPass("tonemap", device, *swapChain));
-        passes.push_back(RenderPassFactory::createPass("blit", device, *swapChain));
+    void loadConfig(const std::string &configPath)
+    {
+        std::ifstream file(configPath);
+        if (!file.is_open())
+            throw std::runtime_error("failed to open config: " + configPath);
 
-        // Wire pass chain: ray_tracing -> tonemap -> blit
-        passes[1]->setInput("color", passes[0]->getOutput("color"));
-        passes[2]->setInput("color", passes[1]->getOutput("color"));
+        json config = json::parse(file);
 
-        // Init all passes (creates pipelines after wiring)
+        passes.clear();
+        passMap.clear();
+
+        // Phase 1: Create all passes
+        for (auto &passConfig : config["passes"])
+        {
+            std::string type = passConfig.at("type");
+            std::string name = passConfig.value("name", type);
+            json params = passConfig.value("params", json::object());
+
+            if (passMap.count(name))
+                throw std::runtime_error("duplicate pass name: '" + name + "'");
+
+            auto pass = RenderPassFactory::createPass(type, device, *swapChain, params);
+            passes.push_back(pass);
+            passMap[name] = pass;
+        }
+
+        // Phase 2: Wire inputs
+        for (auto &passConfig : config["passes"])
+        {
+            if (!passConfig.contains("inputs"))
+                continue;
+
+            std::string name = passConfig.value("name", passConfig.at("type").get<std::string>());
+            auto &pass = passMap.at(name);
+
+            for (auto &[inputSlot, sourceRef] : passConfig["inputs"].items())
+            {
+                std::string src = sourceRef.get<std::string>();
+                auto dotPos = src.find('.');
+                if (dotPos == std::string::npos)
+                    throw std::runtime_error("invalid input reference '" + src + "', expected 'passName.slotName'");
+
+                std::string srcPass = src.substr(0, dotPos);
+                std::string srcSlot = src.substr(dotPos + 1);
+
+                auto it = passMap.find(srcPass);
+                if (it == passMap.end())
+                    throw std::runtime_error("input references unknown pass '" + srcPass + "'");
+
+                pass->setInput(inputSlot, it->second->getOutput(srcSlot));
+            }
+        }
+
+        // Phase 3: Init all passes (creates pipelines after wiring)
         for (auto &pass : passes)
             pass->init();
     }
@@ -154,14 +202,24 @@ private:
     }
 };
 
-int main()
+int main(int argc, char *argv[])
 {
+    std::string configPath = "../config.json";
+    for (int i = 1; i < argc; i++)
+    {
+        std::string arg = argv[i];
+        if (arg == "--config" && i + 1 < argc)
+            configPath = argv[++i];
+        else
+            configPath = arg;
+    }
+
     try
     {
-        Application app;
+        Application app(configPath);
         app.run();
     }
-    catch (const std::runtime_error &e)
+    catch (const std::exception &e)
     {
         std::cerr << e.what() << std::endl;
         return 1;

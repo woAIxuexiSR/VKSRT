@@ -1,0 +1,22 @@
+{
+  "passes": [
+    {
+      "type": "ray_tracing",
+      "name": "rt"
+    },
+    {
+      "type": "tonemap",
+      "name": "tonemap",
+      "inputs": {
+        "color": "rt.color"
+      }
+    },
+    {
+      "type": "blit",
+      "name": "blit",
+      "inputs": {
+        "color": "tonemap.color"
+      }
+    }
+  ]
+}
