@@ -9,10 +9,11 @@
 #include <vector>
 #include <memory>
 
-class CornellBox
+class RayTracingModel
 {
 private:
     Device &device;
+    bool finishBuild{false};
 
     std::vector<glm::vec3> vertices;
     std::vector<glm::uvec3> indices;
@@ -22,7 +23,6 @@ private:
     std::unique_ptr<StorageBufferResource> vertexBuffer;
     std::unique_ptr<StorageBufferResource> indexBuffer;
     std::unique_ptr<StorageBufferResource> materialBuffer;
-    std::unique_ptr<StorageBufferResource> hitRecordBuffer;
     std::unique_ptr<StorageBufferResource> transformBuffer;
     std::unique_ptr<StorageBufferResource> instanceBuffer;
 
@@ -30,7 +30,7 @@ private:
     std::vector<std::unique_ptr<StorageBufferResource>> blasBuffers;
     std::vector<uint64_t> blasAddresses;
 
-    VkAccelerationStructureKHR tlas;
+    VkAccelerationStructureKHR tlas{VK_NULL_HANDLE};
     std::unique_ptr<StorageBufferResource> tlasBuffer;
 
     PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR;
@@ -63,94 +63,6 @@ private:
         return ((value + alignment - 1) / alignment) * alignment;
     }
 
-    void insertMesh(const std::vector<glm::vec3> &_vertices, const std::vector<glm::uvec3> &_indices, glm::vec4 material)
-    {
-        hitSBTRecords.push_back({static_cast<int>(materials.size()), static_cast<int>(vertices.size()), static_cast<int>(indices.size())});
-        vertices.insert(vertices.end(), _vertices.begin(), _vertices.end());
-        indices.insert(indices.end(), _indices.begin(), _indices.end());
-        materials.push_back(material);
-    }
-
-    void insertPlaneXY(const glm::vec3 center, const glm::vec2 size, const glm::vec4 color)
-    {
-        glm::vec2 half = size * 0.5f;
-        std::vector<glm::vec3> v = {{center.x + half.x, center.y + half.y, center.z},
-                                    {center.x - half.x, center.y + half.y, center.z},
-                                    {center.x - half.x, center.y - half.y, center.z},
-                                    {center.x + half.x, center.y - half.y, center.z}};
-        std::vector<glm::uvec3> idx = {{0, 1, 2}, {0, 2, 3}};
-        insertMesh(v, idx, color);
-    }
-
-    void insertPlaneYZ(const glm::vec3 center, const glm::vec2 size, const glm::vec4 color)
-    {
-        glm::vec2 half = size * 0.5f;
-        std::vector<glm::vec3> v = {{center.x, center.y + half.x, center.z + half.y},
-                                    {center.x, center.y - half.x, center.z + half.y},
-                                    {center.x, center.y - half.x, center.z - half.y},
-                                    {center.x, center.y + half.x, center.z - half.y}};
-        std::vector<glm::uvec3> idx = {{0, 1, 2}, {0, 2, 3}};
-        insertMesh(v, idx, color);
-    }
-
-    void insertPlaneXZ(const glm::vec3 center, const glm::vec2 size, const glm::vec4 color)
-    {
-        glm::vec2 half = size * 0.5f;
-        std::vector<glm::vec3> v = {{center.x + half.x, center.y, center.z + half.y},
-                                    {center.x - half.x, center.y, center.z + half.y},
-                                    {center.x - half.x, center.y, center.z - half.y},
-                                    {center.x + half.x, center.y, center.z - half.y}};
-        std::vector<glm::uvec3> idx = {{0, 1, 2}, {0, 2, 3}};
-        insertMesh(v, idx, color);
-    }
-
-    void insertBox(const glm::vec3 center, const glm::vec3 size, const glm::vec4 color, float yaw = 0.0f, float pitch = 0.0f, float roll = 0.0f)
-    {
-        glm::vec3 half = size * 0.5f;
-        std::vector<glm::vec3> v = {{half.x, half.y, half.z},
-                                    {-half.x, half.y, half.z},
-                                    {-half.x, -half.y, half.z},
-                                    {half.x, -half.y, half.z},
-                                    {half.x, half.y, -half.z},
-                                    {-half.x, half.y, -half.z},
-                                    {-half.x, -half.y, -half.z},
-                                    {half.x, -half.y, -half.z}};
-        glm::mat4 rot = glm::rotate(glm::mat4(1.0f), yaw, glm::vec3(0.0f, 0.0f, 1.0f)) *
-                        glm::rotate(glm::mat4(1.0f), pitch, glm::vec3(1.0f, 0.0f, 0.0f)) *
-                        glm::rotate(glm::mat4(1.0f), roll, glm::vec3(0.0f, 1.0f, 0.0f));
-        for (auto &vert : v)
-            vert = glm::vec3(rot * glm::vec4(vert, 1.0f)) + center;
-
-        std::vector<glm::uvec3> idx = {{0, 1, 2}, {0, 2, 3}, {4, 5, 6}, {4, 6, 7},
-                                        {0, 1, 5}, {0, 5, 4}, {1, 2, 6}, {1, 6, 5},
-                                        {2, 3, 7}, {2, 7, 6}, {3, 0, 4}, {3, 4, 7}};
-        insertMesh(v, idx, color);
-    }
-
-    void createScene()
-    {
-        float roomWidth = 2.76f;
-        float roomDepth = 2.56f;
-        float roomHeight = 2.29f;
-
-        glm::vec4 white(0.9f, 0.9f, 0.9f, 0.0f);
-        glm::vec4 gray(0.73f, 0.73f, 0.73f, 0.0f);
-        glm::vec4 red(0.63f, 0.065f, 0.05f, 0.0f);
-        glm::vec4 green(0.14f, 0.45f, 0.091f, 0.0f);
-        glm::vec4 lightColor(15.0f, 15.0f, 15.0f, 1.0f);
-
-        insertPlaneXY(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec2(roomWidth, roomDepth), white);
-        insertPlaneXY(glm::vec3(0.0f, 0.0f, roomHeight), glm::vec2(roomWidth, roomDepth), white);
-        insertPlaneYZ(glm::vec3(-roomWidth / 2, 0.0f, roomHeight / 2), glm::vec2(roomDepth, roomHeight), red);
-        insertPlaneYZ(glm::vec3(roomWidth / 2, 0.0f, roomHeight / 2), glm::vec2(roomDepth, roomHeight), green);
-        insertPlaneXZ(glm::vec3(0.0f, roomDepth / 2, roomHeight / 2), glm::vec2(roomWidth, roomHeight), white);
-
-        insertPlaneXY(glm::vec3(0.0f, 0.0f, roomHeight - 0.01f), glm::vec2(0.5f, 0.5f), lightColor);
-
-        insertBox(glm::vec3(-0.5f, -0.3f, 0.3f), glm::vec3(0.6f, 0.6f, 0.6f), gray, glm::radians(15.0f));
-        insertBox(glm::vec3(0.5f, 0.4f, 0.6f), glm::vec3(0.6f, 0.6f, 1.2f), gray, glm::radians(-18.0f));
-    }
-
     void createBLAS()
     {
         const size_t meshCount = hitSBTRecords.size();
@@ -178,15 +90,6 @@ private:
         materialBuffer = std::make_unique<StorageBufferResource>(device, sizeof(glm::vec4) * materials.size(),
                                                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
         materialBuffer->update(materials.data());
-
-        // Build hit record buffer for shader access (padded to 16 bytes per record)
-        struct alignas(16) PaddedHitRecord { int matIndex; int vertexOffset; int indexOffset; int _pad; };
-        std::vector<PaddedHitRecord> paddedRecords(meshCount);
-        for (size_t i = 0; i < meshCount; i++)
-            paddedRecords[i] = {hitSBTRecords[i].materialIndex, hitSBTRecords[i].vertexOffset, hitSBTRecords[i].indexOffset, 0};
-        hitRecordBuffer = std::make_unique<StorageBufferResource>(device, sizeof(PaddedHitRecord) * meshCount,
-                                                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
-        hitRecordBuffer->update(paddedRecords.data());
 
         std::vector<VkAccelerationStructureGeometryKHR> geometries(meshCount);
         std::vector<VkAccelerationStructureBuildGeometryInfoKHR> buildInfos(meshCount);
@@ -362,24 +265,40 @@ private:
     }
 
 public:
-    CornellBox(Device &_d) : device(_d), tlas(VK_NULL_HANDLE)
+    RayTracingModel(Device &_d) : device(_d)
     {
         loadFunctions();
-        createScene();
-        createBLAS();
-        createTLAS();
     }
 
-    ~CornellBox()
+    ~RayTracingModel()
     {
+        if (!finishBuild)
+            return;
         for (auto b : blas)
             vkDestroyAccelerationStructureKHR(device.getDevice(), b, nullptr);
         if (tlas != VK_NULL_HANDLE)
             vkDestroyAccelerationStructureKHR(device.getDevice(), tlas, nullptr);
     }
 
-    CornellBox(const CornellBox &) = delete;
-    CornellBox &operator=(const CornellBox &) = delete;
+    RayTracingModel(const RayTracingModel &) = delete;
+    RayTracingModel &operator=(const RayTracingModel &) = delete;
+
+    void insertMesh(const std::vector<glm::vec3> &_vertices, const std::vector<glm::uvec3> &_indices, glm::vec4 material)
+    {
+        hitSBTRecords.push_back({static_cast<int>(materials.size()), static_cast<int>(vertices.size()), static_cast<int>(indices.size())});
+        vertices.insert(vertices.end(), _vertices.begin(), _vertices.end());
+        indices.insert(indices.end(), _indices.begin(), _indices.end());
+        materials.push_back(material);
+    }
+
+    void buildAccelerationStructures()
+    {
+        if (finishBuild)
+            throw std::runtime_error("Acceleration structures already built!");
+        createBLAS();
+        createTLAS();
+        finishBuild = true;
+    }
 
     const std::vector<HitSBTRecord> &getHitSBTRecords() const { return hitSBTRecords; }
 
@@ -390,7 +309,6 @@ public:
             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_RAYGEN_BIT_KHR},
             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_RAYGEN_BIT_KHR},
             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_RAYGEN_BIT_KHR},
-            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR},
         };
     }
 
@@ -402,7 +320,6 @@ public:
             {VkDescriptorBufferInfo{vertexBuffer->getBuffer(), 0, VK_WHOLE_SIZE}},
             {VkDescriptorBufferInfo{indexBuffer->getBuffer(), 0, VK_WHOLE_SIZE}},
             {VkDescriptorBufferInfo{materialBuffer->getBuffer(), 0, VK_WHOLE_SIZE}},
-            {VkDescriptorBufferInfo{hitRecordBuffer->getBuffer(), 0, VK_WHOLE_SIZE}},
         };
     }
 };

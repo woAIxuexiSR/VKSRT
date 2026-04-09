@@ -125,10 +125,9 @@ struct HitSBTRecord
 class RayTracingPipeline : public Pipeline
 {
 protected:
-    std::string spvPath;
-    std::string raygenEntryName;
-    std::string missEntryName;
-    std::string hitEntryName;
+    std::string raygenPath;
+    std::string missPath;
+    std::string hitPath;
 
     std::unique_ptr<StorageBufferResource> raygenSBT;
     std::unique_ptr<StorageBufferResource> missSBT;
@@ -150,11 +149,9 @@ protected:
 
 public:
     RayTracingPipeline(Device &_d, uint32_t _cnt, const std::vector<DescriptorLayoutBinding> &bindings,
-                       const std::string &_spvPath,
-                       const std::string &_raygenEntry, const std::string &_missEntry, const std::string &_hitEntry,
+                       const std::string &_raygenPath, const std::string &_missPath, const std::string &_hitPath,
                        const std::vector<HitSBTRecord> &hitRecords)
-        : Pipeline(_d, _cnt, bindings), spvPath(_spvPath),
-          raygenEntryName(_raygenEntry), missEntryName(_missEntry), hitEntryName(_hitEntry)
+        : Pipeline(_d, _cnt, bindings), raygenPath(_raygenPath), missPath(_missPath), hitPath(_hitPath)
     {
         createPipeline();
         createSBTs(hitRecords);

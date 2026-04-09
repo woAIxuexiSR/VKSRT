@@ -355,26 +355,31 @@ void ComputePipeline::pushConstants(VkCommandBuffer commandBuffer, void *data)
 
 void RayTracingPipeline::createPipeline()
 {
-    auto shaderCode = readFile(spvPath);
-    VkShaderModule shaderModule = createShaderModule(shaderCode);
+    auto raygenShaderCode = readFile(raygenPath);
+    auto missShaderCode = readFile(missPath);
+    auto hitShaderCode = readFile(hitPath);
+
+    VkShaderModule raygenShaderModule = createShaderModule(raygenShaderCode);
+    VkShaderModule missShaderModule = createShaderModule(missShaderCode);
+    VkShaderModule hitShaderModule = createShaderModule(hitShaderCode);
 
     VkPipelineShaderStageCreateInfo raygenStage{};
     raygenStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     raygenStage.stage = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
-    raygenStage.module = shaderModule;
-    raygenStage.pName = raygenEntryName.c_str();
+    raygenStage.module = raygenShaderModule;
+    raygenStage.pName = "main";
 
     VkPipelineShaderStageCreateInfo missStage{};
     missStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     missStage.stage = VK_SHADER_STAGE_MISS_BIT_KHR;
-    missStage.module = shaderModule;
-    missStage.pName = missEntryName.c_str();
+    missStage.module = missShaderModule;
+    missStage.pName = "main";
 
     VkPipelineShaderStageCreateInfo hitStage{};
     hitStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     hitStage.stage = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
-    hitStage.module = shaderModule;
-    hitStage.pName = hitEntryName.c_str();
+    hitStage.module = hitShaderModule;
+    hitStage.pName = "main";
 
     VkRayTracingShaderGroupCreateInfoKHR raygenGroup{};
     raygenGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
@@ -424,7 +429,9 @@ void RayTracingPipeline::createPipeline()
     if (vkCreateRayTracingPipelinesKHR(device.getDevice(), VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &pipeline) != VK_SUCCESS)
         throw std::runtime_error("failed to create ray tracing pipeline!");
 
-    vkDestroyShaderModule(device.getDevice(), shaderModule, nullptr);
+    vkDestroyShaderModule(device.getDevice(), raygenShaderModule, nullptr);
+    vkDestroyShaderModule(device.getDevice(), missShaderModule, nullptr);
+    vkDestroyShaderModule(device.getDevice(), hitShaderModule, nullptr);
 }
 
 void RayTracingPipeline::bindPipeline(VkCommandBuffer commandBuffer)

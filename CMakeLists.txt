@@ -26,6 +26,42 @@ add_library(imgui STATIC
 )
 target_link_libraries(imgui PRIVATE glfw Vulkan::Vulkan)
 
+# compile GLSL shaders (rgen, rmiss, rchit, vert, frag, comp)
+if(NOT GLSLC_EXECUTABLE)
+    if(DEFINED ENV{VULKAN_SDK})
+        set(GLSLC_EXECUTABLE "$ENV{VULKAN_SDK}/bin/glslc")
+    else()
+        message(FATAL_ERROR "glslc not found")
+    endif()
+endif()
+
+file(GLOB_RECURSE GLSL_FILES
+    "src/passes/**/*.rgen"
+    "src/passes/**/*.rmiss"
+    "src/passes/**/*.rchit"
+    "src/passes/**/*.vert"
+    "src/passes/**/*.frag"
+    "src/passes/**/*.comp"
+)
+
+set(SPIRV_BINARY_FILES "")
+foreach(GLSL ${GLSL_FILES})
+    get_filename_component(FILE_NAME ${GLSL} NAME)
+    file(RELATIVE_PATH REL_PATH ${CMAKE_SOURCE_DIR}/src/passes ${GLSL})
+    get_filename_component(DIR_PATH ${REL_PATH} PATH)
+    set(SPIRV "${CMAKE_BINARY_DIR}/shaders/${DIR_PATH}/${FILE_NAME}.spv")
+
+    add_custom_command(
+        OUTPUT ${SPIRV}
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders/${DIR_PATH}"
+        COMMAND ${GLSLC_EXECUTABLE} ${GLSL} -o ${SPIRV} --target-env=vulkan1.2
+        DEPENDS ${GLSL}
+        COMMENT "Compiling ${FILE_NAME} to SPIR-V (glslc)"
+    )
+
+    list(APPEND SPIRV_BINARY_FILES ${SPIRV})
+endforeach()
+
 # compile slang shaders
 if(NOT SLANGC_EXECUTABLE)
     if(DEFINED ENV{VULKAN_SDK})
@@ -37,7 +73,6 @@ endif()
 
 file(GLOB_RECURSE SLANG_FILES "src/passes/**/*.slang")
 
-set(SPIRV_BINARY_FILES "")
 foreach(SLANG ${SLANG_FILES})
     get_filename_component(FILE_NAME ${SLANG} NAME)
     get_filename_component(SLANG_DIR ${SLANG} DIRECTORY)
