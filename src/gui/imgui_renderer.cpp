@@ -38,6 +38,7 @@ void ImGUIRenderer::initImGUI(SwapChain &swapChain)
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableSetMousePos;
 
     ImGui::StyleColorsDark();
+    io.FontGlobalScale = 2.0f;
 
     ImGui_ImplGlfw_InitForVulkan(window.getWindow(), true);
 

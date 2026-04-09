@@ -39,6 +39,7 @@ public:
     RayTracingPass(Device &_d, SwapChain &_sc, const json &params);
 
     std::string getName() const override { return "RayTracing"; }
+    bool canDisable() const override { return false; }
 
     void init() override;
     void drawUI() override;

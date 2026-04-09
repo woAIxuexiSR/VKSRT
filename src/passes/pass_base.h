@@ -50,6 +50,7 @@ public:
     // --- Enable/Disable ---
     void setEnabled(bool e) { enabled = e; }
     bool isEnabled() const { return enabled; }
+    virtual bool canDisable() const { return true; }
 
     // --- Image slot wiring ---
     void setInput(const std::string &name, const PassImageSlot &slot)

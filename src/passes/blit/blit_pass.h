@@ -16,6 +16,7 @@ public:
     BlitPass(Device &_d, SwapChain &_sc, const json &params);
 
     std::string getName() const override { return "Blit"; }
+    bool canDisable() const override { return false; }
 
     void init() override;
     void drawUI() override;

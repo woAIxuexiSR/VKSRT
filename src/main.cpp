@@ -153,7 +153,7 @@ private:
         ImGui::NewFrame();
 
         ImGui::SetNextWindowPos(ImVec2(50, 50), ImGuiCond_Once);
-        ImGui::SetNextWindowSize(ImVec2(300, 300), ImGuiCond_Once);
+        ImGui::SetNextWindowSize(ImVec2(450, 450), ImGuiCond_Once);
         ImGui::Begin("VKSRT");
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
         ImGui::Separator();
@@ -162,6 +162,12 @@ private:
             if (ImGui::CollapsingHeader(pass->getName().c_str(), ImGuiTreeNodeFlags_DefaultOpen))
             {
                 ImGui::PushID(pass->getName().c_str());
+                if (pass->canDisable())
+                {
+                    bool en = pass->isEnabled();
+                    if (ImGui::Checkbox("Enabled", &en))
+                        pass->setEnabled(en);
+                }
                 if (pass->isEnabled())
                     pass->drawUI();
                 ImGui::PopID();
@@ -181,8 +187,7 @@ private:
             throw std::runtime_error("failed to begin recording command buffer!");
 
         for (auto &pass : passes)
-            if (pass->isEnabled())
-                pass->recordCommand(commandBuffers[currentFrame], currentFrame, imageIndex);
+            pass->recordCommand(commandBuffers[currentFrame], currentFrame, imageIndex);
 
         if (vkEndCommandBuffer(commandBuffers[currentFrame]) != VK_SUCCESS)
             throw std::runtime_error("failed to record command buffer!");
