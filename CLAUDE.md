@@ -23,30 +23,30 @@
 src/
 ├── core/           # Vulkan 核心抽象（从 EasyVulkan backend 移植）
 │   ├── device.h/cpp
-│   ├── swapchain.h/cpp   (EasyVulkan: swap_chain)
+│   ├── swap_chain.h/cpp
 │   ├── window.h/cpp
 │   ├── resource.h/cpp
-│   ├── pipeline.h/cpp    # 简化：只传单个 slang 文件
-│   └── command.h/cpp
+│   └── pipeline.h/cpp    # 简化：只传单个 slang 文件
 ├── passes/         # 渲染 Pass（每个 Pass 一个子文件夹，shader 放同目录）
 │   ├── pass_base.h       # Pass 基类
 │   ├── triangle/         # M2: 光栅化三角形
-│   │   ├── triangle_pass.h/cpp
+│   │   ├── triangle_pass.h  (header-only)
 │   │   └── triangle.slang
 │   ├── ray_tracing/      # M3: 光追
-│   │   ├── ray_tracing_pass.h/cpp
-│   │   └── ray_tracing.slang
-│   └── tonemap/          # 色调映射
-│       ├── tonemap_pass.h/cpp
+│   │   ├── ray_tracing_pass.h  (header-only)
+│   │   ├── ray_tracing.slang
+│   │   └── blit.slang    # 全屏 blit，将 RT 结果绘制到 swapchain
+│   └── tonemap/          # 色调映射（待实现）
+│       ├── tonemap_pass.h
 │       └── tonemap.slang
 ├── scene/          # 场景管理
 │   ├── camera.h/cpp      # 从 EasyVulkan model/camera 移植
-│   └── cornell_box.h/cpp # 程序化生成 Cornell Box
+│   └── cornell_box.h     # 程序化生成 Cornell Box (header-only)
 ├── gui/            # ImGui 集成
 │   └── imgui_renderer.h/cpp  # 从 EasyVulkan 移植
 └── main.cpp
-shaders/            # CMake 会从 passes/ 子目录收集 .slang 文件编译
 ```
+Shader 编译：CMake 从 `src/passes/` 子目录收集 `.slang` 文件，编译输出到 `build/shaders/`。
 
 ### 链状 RenderPass
 - Pass 间传递 VkImage + 可选额外属性
@@ -61,21 +61,24 @@ shaders/            # CMake 会从 passes/ 子目录收集 .slang 文件编译
 
 ## 里程碑
 
-### M1: 项目搭建
+### M1: 项目搭建 [已完成]
 - CMake + vcpkg + 目录结构
-- Vulkan 核心封装（从 EasyVulkan 移植）
+- Vulkan 核心封装（从 EasyVulkan 移植：device, swap_chain, window, resource, pipeline）
+- ImGui 集成
 - 空窗口能编译运行
 
-### M2: 光栅化三角形
-- 实现 Pass 框架（基类 + 链状执行）
-- passes/triangle/ 实现三角形绘制
+### M2: 光栅化三角形 [已完成]
+- 实现 Pass 框架（pass_base.h 基类 + 链状执行）
+- passes/triangle/ 实现三角形绘制（Dynamic Rendering）
 - 验证渲染管线跑通
 
-### M3: 光追 Cornell Box（简单着色）
-- 程序化生成 Cornell Box
-- BLAS/TLAS 加速结构
-- RT Pass + Tonemap Pass
-- 直接光照
+### M3: 光追 Cornell Box（简单着色）[进行中]
+- [x] 程序化生成 Cornell Box（cornell_box.h）
+- [x] BLAS/TLAS 加速结构
+- [x] RT Pass（ray_tracing_pass.h + ray_tracing.slang）
+- [x] Blit Pass（blit.slang，全屏三角形将 RT 结果绘制到 swapchain）
+- [x] 相机控制（camera.h/cpp，支持输入和多帧累积重置）
+- [ ] Tonemap Pass（待实现）
 
 ### M4: Path Tracing Cornell Box
 - 升级为 Path Tracing（多次弹射）
