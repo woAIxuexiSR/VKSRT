@@ -1,0 +1,29 @@
+# Build output
+build/
+out/
+cmake-build-*/
+
+# Compiled shaders
+*.spv
+
+# IDE
+.vs/
+.vscode/
+*.suo
+*.user
+*.sln.docstates
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Dependencies (vcpkg local)
+vcpkg_installed/
+
+# Env / secrets
+.env
+*.env
+
+# Claude Code (keep agents and CLAUDE.md, ignore local settings)
+.claude/settings.local.json
