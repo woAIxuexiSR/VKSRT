@@ -18,6 +18,7 @@ public:
     std::string getName() const override { return "Blit"; }
 
     void init() override;
+    void drawUI() override;
     void recordCommand(VkCommandBuffer commandBuffer,
                        uint32_t currentFrame, uint32_t imageIndex) override;
 };

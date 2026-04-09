@@ -61,7 +61,7 @@ public:
     {
         auto it = outputs.find(name);
         if (it == outputs.end())
-            throw std::runtime_error("PassBase::getOutput: slot '" + name + "' not found in pass '" + getName() + "'");
+            throw std::runtime_error("PassBase::getOutput: slot '" + name + "' not found");
         return it->second;
     }
 

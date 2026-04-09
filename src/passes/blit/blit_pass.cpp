@@ -1,5 +1,7 @@
 #include "blit_pass.h"
 
+#include "imgui.h"
+
 REGISTER_RENDER_PASS_CPP(BlitPass, "blit");
 
 BlitPass::BlitPass(Device &_d, SwapChain &_sc, const json &params)
@@ -24,6 +26,12 @@ void BlitPass::init()
     blitPipeline->updateDescriptorSets({
         {VkDescriptorImageInfo{input.sampler, input.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}},
     });
+}
+
+void BlitPass::drawUI()
+{
+    auto extent = swapChain.getExtent();
+    ImGui::Text("Output: %ux%u", extent.width, extent.height);
 }
 
 void BlitPass::recordCommand(VkCommandBuffer commandBuffer,

@@ -6,6 +6,11 @@
 
 #include <memory>
 
+struct TonemapPushConstants
+{
+    float exposure{1.0f};
+};
+
 class TonemapPass : public PassBase
 {
     REGISTER_RENDER_PASS(TonemapPass);
@@ -13,6 +18,7 @@ class TonemapPass : public PassBase
 private:
     std::unique_ptr<ComputePipeline> tonemapPipeline;
     ImageResource ldrImage;
+    TonemapPushConstants pushConstants;
 
 public:
     TonemapPass(Device &_d, SwapChain &_sc, const json &params);
@@ -20,6 +26,7 @@ public:
     std::string getName() const override { return "Tonemap"; }
 
     void init() override;
+    void drawUI() override;
     void recordCommand(VkCommandBuffer commandBuffer,
                        uint32_t currentFrame, uint32_t imageIndex) override;
 };

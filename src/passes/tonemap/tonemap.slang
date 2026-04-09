@@ -8,6 +8,14 @@ Texture2D<float4> inputImage;
 [[vk::binding(1)]]
 RWTexture2D<float4> outputImage;
 
+struct TonemapParams
+{
+    float exposure;
+};
+
+[[vk::push_constant]]
+TonemapParams params;
+
 // ACES filmic tone mapping
 float3 acesTonemap(float3 x)
 {
@@ -29,6 +37,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
         return;
 
     float4 hdrColor = inputImage[dispatchThreadID.xy];
-    float3 mapped = acesTonemap(hdrColor.rgb);
+    float3 exposed = hdrColor.rgb * params.exposure;
+    float3 mapped = acesTonemap(exposed);
     outputImage[dispatchThreadID.xy] = float4(mapped, 1.0);
 }

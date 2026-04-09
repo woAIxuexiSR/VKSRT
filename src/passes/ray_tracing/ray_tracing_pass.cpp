@@ -66,6 +66,9 @@ void RayTracingPass::init()
 void RayTracingPass::drawUI()
 {
     ImGui::Text("Frame Index: %d", ubo.frameIndex);
+    ImGui::Text("Camera Pos: (%.2f, %.2f, %.2f)", camera.pos.x, camera.pos.y, camera.pos.z);
+    ImGui::Text("Yaw: %.1f  Pitch: %.1f", camera.yaw, camera.pitch);
+    ImGui::Text("FOV: %.1f", camera.fov);
 }
 
 void RayTracingPass::update(uint32_t currentFrame, InputState &inputState)

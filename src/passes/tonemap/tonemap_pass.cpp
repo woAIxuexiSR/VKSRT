@@ -1,5 +1,7 @@
 #include "tonemap_pass.h"
 
+#include "imgui.h"
+
 REGISTER_RENDER_PASS_CPP(TonemapPass, "tonemap");
 
 TonemapPass::TonemapPass(Device &_d, SwapChain &_sc, const json &params)
@@ -7,6 +9,9 @@ TonemapPass::TonemapPass(Device &_d, SwapChain &_sc, const json &params)
       ldrImage{_d, VK_FORMAT_R8G8B8A8_UNORM, _sc.getExtent(),
                VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT}
 {
+    if (params.contains("exposure"))
+        pushConstants.exposure = params["exposure"].get<float>();
+
     outputs["color"] = {
         ldrImage.getImage(),
         ldrImage.getImageView(),
@@ -27,12 +32,18 @@ void TonemapPass::init()
             {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT},
             {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT},
         },
-        "../shaders/tonemap/tonemap.slang.spv");
+        "../shaders/tonemap/tonemap.slang.spv",
+        sizeof(TonemapPushConstants));
 
     tonemapPipeline->updateDescriptorSets({
         {VkDescriptorImageInfo{input.sampler, input.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}},
         {VkDescriptorImageInfo{ldrImage.getSampler(), ldrImage.getImageView(), VK_IMAGE_LAYOUT_GENERAL}},
     });
+}
+
+void TonemapPass::drawUI()
+{
+    ImGui::SliderFloat("Exposure", &pushConstants.exposure, 0.1f, 10.0f);
 }
 
 void TonemapPass::recordCommand(VkCommandBuffer commandBuffer,
@@ -56,6 +67,7 @@ void TonemapPass::recordCommand(VkCommandBuffer commandBuffer,
     // Dispatch tonemap compute shader
     tonemapPipeline->bindPipeline(commandBuffer);
     tonemapPipeline->bindDescriptorSets(commandBuffer, currentFrame);
+    tonemapPipeline->pushConstants(commandBuffer, &pushConstants);
     uint32_t groupsX = (extent.width + 15) / 16;
     uint32_t groupsY = (extent.height + 15) / 16;
     vkCmdDispatch(commandBuffer, groupsX, groupsY, 1);

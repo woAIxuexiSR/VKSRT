@@ -153,12 +153,20 @@ private:
         ImGui::NewFrame();
 
         ImGui::SetNextWindowPos(ImVec2(50, 50), ImGuiCond_Once);
-        ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_Once);
+        ImGui::SetNextWindowSize(ImVec2(300, 300), ImGuiCond_Once);
         ImGui::Begin("VKSRT");
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+        ImGui::Separator();
         for (auto &pass : passes)
-            if (pass->isEnabled())
-                pass->drawUI();
+        {
+            if (ImGui::CollapsingHeader(pass->getName().c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                ImGui::PushID(pass->getName().c_str());
+                if (pass->isEnabled())
+                    pass->drawUI();
+                ImGui::PopID();
+            }
+        }
         ImGui::End();
 
         ImGui::Render();
