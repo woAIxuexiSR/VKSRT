@@ -125,18 +125,19 @@ struct HitSBTRecord
 class RayTracingPipeline : public Pipeline
 {
 protected:
-    std::string raygenPath;
-    std::string missPath;
-    std::string hitPath;
+    std::string spvPath;
+    std::string raygenEntry;
+    std::string missEntryName;
+    std::string hitEntryName;
 
     std::unique_ptr<StorageBufferResource> raygenSBT;
     std::unique_ptr<StorageBufferResource> missSBT;
     std::unique_ptr<StorageBufferResource> hitSBT;
 
-    VkStridedDeviceAddressRegionKHR raygenEntry{};
-    VkStridedDeviceAddressRegionKHR missEntry{};
-    VkStridedDeviceAddressRegionKHR hitEntry{};
-    VkStridedDeviceAddressRegionKHR callEntry{};
+    VkStridedDeviceAddressRegionKHR raygenRegion{};
+    VkStridedDeviceAddressRegionKHR missRegion{};
+    VkStridedDeviceAddressRegionKHR hitRegion{};
+    VkStridedDeviceAddressRegionKHR callRegion{};
 
     PFN_vkCmdTraceRaysKHR vkCmdTraceRaysKHR{nullptr};
     PFN_vkGetRayTracingShaderGroupHandlesKHR vkGetRayTracingShaderGroupHandlesKHR{nullptr};
@@ -149,9 +150,12 @@ protected:
 
 public:
     RayTracingPipeline(Device &_d, uint32_t _cnt, const std::vector<DescriptorLayoutBinding> &bindings,
-                       const std::string &_raygenPath, const std::string &_missPath, const std::string &_hitPath,
-                       const std::vector<HitSBTRecord> &hitRecords)
-        : Pipeline(_d, _cnt, bindings), raygenPath(_raygenPath), missPath(_missPath), hitPath(_hitPath)
+                       const std::string &_spvPath, const std::vector<HitSBTRecord> &hitRecords,
+                       const std::string &_raygenEntry = "raygenMain",
+                       const std::string &_missEntry = "missMain",
+                       const std::string &_hitEntry = "closestHitMain")
+        : Pipeline(_d, _cnt, bindings), spvPath(_spvPath),
+          raygenEntry(_raygenEntry), missEntryName(_missEntry), hitEntryName(_hitEntry)
     {
         createPipeline();
         createSBTs(hitRecords);

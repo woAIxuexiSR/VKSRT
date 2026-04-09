@@ -69,9 +69,7 @@ public:
 
         rtPipeline = std::make_unique<RayTracingPipeline>(
             device, 1, bindings,
-            "../shaders/ray_tracing/raygen.spv",
-            "../shaders/ray_tracing/miss.spv",
-            "../shaders/ray_tracing/closesthit.spv",
+            "../shaders/ray_tracing/ray_tracing.spv",
             model.getHitSBTRecords());
 
         // Update RT pipeline descriptors

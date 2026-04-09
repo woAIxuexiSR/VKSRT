@@ -355,31 +355,26 @@ void ComputePipeline::pushConstants(VkCommandBuffer commandBuffer, void *data)
 
 void RayTracingPipeline::createPipeline()
 {
-    auto raygenShaderCode = readFile(raygenPath);
-    auto missShaderCode = readFile(missPath);
-    auto hitShaderCode = readFile(hitPath);
-
-    VkShaderModule raygenShaderModule = createShaderModule(raygenShaderCode);
-    VkShaderModule missShaderModule = createShaderModule(missShaderCode);
-    VkShaderModule hitShaderModule = createShaderModule(hitShaderCode);
+    auto shaderCode = readFile(spvPath);
+    VkShaderModule shaderModule = createShaderModule(shaderCode);
 
     VkPipelineShaderStageCreateInfo raygenStage{};
     raygenStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     raygenStage.stage = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
-    raygenStage.module = raygenShaderModule;
-    raygenStage.pName = "main";
+    raygenStage.module = shaderModule;
+    raygenStage.pName = raygenEntry.c_str();
 
     VkPipelineShaderStageCreateInfo missStage{};
     missStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     missStage.stage = VK_SHADER_STAGE_MISS_BIT_KHR;
-    missStage.module = missShaderModule;
-    missStage.pName = "main";
+    missStage.module = shaderModule;
+    missStage.pName = missEntryName.c_str();
 
     VkPipelineShaderStageCreateInfo hitStage{};
     hitStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     hitStage.stage = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
-    hitStage.module = hitShaderModule;
-    hitStage.pName = "main";
+    hitStage.module = shaderModule;
+    hitStage.pName = hitEntryName.c_str();
 
     VkRayTracingShaderGroupCreateInfoKHR raygenGroup{};
     raygenGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
@@ -429,9 +424,7 @@ void RayTracingPipeline::createPipeline()
     if (vkCreateRayTracingPipelinesKHR(device.getDevice(), VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &pipeline) != VK_SUCCESS)
         throw std::runtime_error("failed to create ray tracing pipeline!");
 
-    vkDestroyShaderModule(device.getDevice(), raygenShaderModule, nullptr);
-    vkDestroyShaderModule(device.getDevice(), missShaderModule, nullptr);
-    vkDestroyShaderModule(device.getDevice(), hitShaderModule, nullptr);
+    vkDestroyShaderModule(device.getDevice(), shaderModule, nullptr);
 }
 
 void RayTracingPipeline::bindPipeline(VkCommandBuffer commandBuffer)
@@ -492,25 +485,25 @@ void RayTracingPipeline::createSBTs(const std::vector<HitSBTRecord> &hitRecords)
     }
     hitSBT->update(hitData.data());
 
-    raygenEntry = {};
-    raygenEntry.size = handleSizeAligned;
-    raygenEntry.stride = handleSizeAligned;
-    raygenEntry.deviceAddress = getBufferDeviceAddress(raygenSBT->getBuffer());
+    raygenRegion = {};
+    raygenRegion.size = handleSizeAligned;
+    raygenRegion.stride = handleSizeAligned;
+    raygenRegion.deviceAddress = getBufferDeviceAddress(raygenSBT->getBuffer());
 
-    missEntry = {};
-    missEntry.size = handleSizeAligned;
-    missEntry.stride = handleSizeAligned;
-    missEntry.deviceAddress = getBufferDeviceAddress(missSBT->getBuffer());
+    missRegion = {};
+    missRegion.size = handleSizeAligned;
+    missRegion.stride = handleSizeAligned;
+    missRegion.deviceAddress = getBufferDeviceAddress(missSBT->getBuffer());
 
-    hitEntry = {};
-    hitEntry.size = hitStride * hitGroupCount;
-    hitEntry.stride = hitStride;
-    hitEntry.deviceAddress = getBufferDeviceAddress(hitSBT->getBuffer());
+    hitRegion = {};
+    hitRegion.size = hitStride * hitGroupCount;
+    hitRegion.stride = hitStride;
+    hitRegion.deviceAddress = getBufferDeviceAddress(hitSBT->getBuffer());
 
-    callEntry = {};
+    callRegion = {};
 }
 
 void RayTracingPipeline::traceRays(VkCommandBuffer commandBuffer, VkExtent3D extent)
 {
-    vkCmdTraceRaysKHR(commandBuffer, &raygenEntry, &missEntry, &hitEntry, &callEntry, extent.width, extent.height, extent.depth);
+    vkCmdTraceRaysKHR(commandBuffer, &raygenRegion, &missRegion, &hitRegion, &callRegion, extent.width, extent.height, extent.depth);
 }

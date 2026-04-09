@@ -36,31 +36,20 @@ if(NOT SLANGC_EXECUTABLE)
     endif()
 endif()
 
-# RT slang shader: single file compiled 3 times with different entry points
+# RT slang shader: single file with all entry points compiled to one SPV
 set(RT_SLANG "${CMAKE_SOURCE_DIR}/src/passes/ray_tracing/ray_tracing.slang")
 set(RT_SLANG_DIR "${CMAKE_SOURCE_DIR}/src/passes/ray_tracing")
 set(RT_OUT_DIR "${CMAKE_BINARY_DIR}/shaders/ray_tracing")
+set(RT_SPV "${RT_OUT_DIR}/ray_tracing.spv")
 
-set(RT_ENTRIES "raygenMain;missMain;closestHitMain")
-set(RT_STAGES "raygeneration;miss;closesthit")
-set(RT_NAMES "raygen;miss;closesthit")
-
-foreach(idx RANGE 2)
-    list(GET RT_ENTRIES ${idx} ENTRY)
-    list(GET RT_STAGES ${idx} STAGE)
-    list(GET RT_NAMES ${idx} NAME)
-    set(SPIRV "${RT_OUT_DIR}/${NAME}.spv")
-
-    add_custom_command(
-        OUTPUT ${SPIRV}
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${RT_OUT_DIR}"
-        COMMAND ${SLANGC_EXECUTABLE} ${RT_SLANG} -I${RT_SLANG_DIR} -target spirv -entry ${ENTRY} -stage ${STAGE} -o ${SPIRV}
-        DEPENDS ${RT_SLANG}
-        COMMENT "Compiling ray_tracing.slang entry ${ENTRY} to SPIR-V"
-    )
-
-    list(APPEND SPIRV_BINARY_FILES ${SPIRV})
-endforeach()
+add_custom_command(
+    OUTPUT ${RT_SPV}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${RT_OUT_DIR}"
+    COMMAND ${SLANGC_EXECUTABLE} ${RT_SLANG} -I${RT_SLANG_DIR} -target spirv -entry raygenMain -entry missMain -entry closestHitMain -o ${RT_SPV}
+    DEPENDS ${RT_SLANG}
+    COMMENT "Compiling ray_tracing.slang (all entries) to single SPIR-V"
+)
+list(APPEND SPIRV_BINARY_FILES ${RT_SPV})
 
 # compile other slang shaders (single entry point each)
 file(GLOB_RECURSE SLANG_FILES "src/passes/**/*.slang")
