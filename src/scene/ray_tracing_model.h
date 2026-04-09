@@ -3,6 +3,7 @@
 #include "device.h"
 #include "resource.h"
 #include "pipeline.h"
+#include "material.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -16,11 +17,15 @@ private:
     bool finishBuild{false};
 
     std::vector<glm::vec3> vertices;
+    std::vector<glm::vec3> normals;
+    std::vector<glm::vec2> texcoords;
     std::vector<glm::uvec3> indices;
     std::vector<HitSBTRecord> hitSBTRecords;
-    std::vector<glm::vec4> materials; // rgb=color, a=emission
+    std::vector<Material> materials;
 
     std::unique_ptr<StorageBufferResource> vertexBuffer;
+    std::unique_ptr<StorageBufferResource> normalBuffer;
+    std::unique_ptr<StorageBufferResource> texcoordBuffer;
     std::unique_ptr<StorageBufferResource> indexBuffer;
     std::unique_ptr<StorageBufferResource> materialBuffer;
     std::unique_ptr<StorageBufferResource> transformBuffer;
@@ -85,9 +90,15 @@ private:
                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         vertexBuffer = std::make_unique<StorageBufferResource>(device, sizeof(glm::vec3) * vertices.size(), usage);
         vertexBuffer->update(vertices.data());
+        normalBuffer = std::make_unique<StorageBufferResource>(device, sizeof(glm::vec3) * normals.size(),
+                                                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+        normalBuffer->update(normals.data());
+        texcoordBuffer = std::make_unique<StorageBufferResource>(device, sizeof(glm::vec2) * texcoords.size(),
+                                                                  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+        texcoordBuffer->update(texcoords.data());
         indexBuffer = std::make_unique<StorageBufferResource>(device, sizeof(glm::uvec3) * indices.size(), usage);
         indexBuffer->update(indices.data());
-        materialBuffer = std::make_unique<StorageBufferResource>(device, sizeof(glm::vec4) * materials.size(),
+        materialBuffer = std::make_unique<StorageBufferResource>(device, sizeof(Material) * materials.size(),
                                                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
         materialBuffer->update(materials.data());
 
@@ -283,12 +294,26 @@ public:
     RayTracingModel(const RayTracingModel &) = delete;
     RayTracingModel &operator=(const RayTracingModel &) = delete;
 
-    void insertMesh(const std::vector<glm::vec3> &_vertices, const std::vector<glm::uvec3> &_indices, glm::vec4 material)
+    void insertMesh(const std::vector<glm::vec3> &_vertices,
+                    const std::vector<glm::uvec3> &_indices,
+                    const Material &material,
+                    const std::vector<glm::vec3> &_normals = {},
+                    const std::vector<glm::vec2> &_texcoords = {})
     {
         hitSBTRecords.push_back({static_cast<int>(materials.size()), static_cast<int>(vertices.size()), static_cast<int>(indices.size())});
         vertices.insert(vertices.end(), _vertices.begin(), _vertices.end());
         indices.insert(indices.end(), _indices.begin(), _indices.end());
         materials.push_back(material);
+
+        if (!_normals.empty())
+            normals.insert(normals.end(), _normals.begin(), _normals.end());
+        else
+            normals.resize(vertices.size(), glm::vec3(0.0f, 0.0f, 1.0f));
+
+        if (!_texcoords.empty())
+            texcoords.insert(texcoords.end(), _texcoords.begin(), _texcoords.end());
+        else
+            texcoords.resize(vertices.size(), glm::vec2(0.0f));
     }
 
     void buildAccelerationStructures()
@@ -304,11 +329,14 @@ public:
 
     std::vector<DescriptorLayoutBinding> getDescriptorLayoutBindings() const
     {
+        VkShaderStageFlags hitStages = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_RAYGEN_BIT_KHR;
         return {
             {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, VK_SHADER_STAGE_RAYGEN_BIT_KHR},
-            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_RAYGEN_BIT_KHR},
-            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_RAYGEN_BIT_KHR},
-            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_RAYGEN_BIT_KHR},
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, hitStages}, // vertices
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, hitStages}, // indices
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, hitStages}, // materials
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, hitStages}, // normals
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, hitStages}, // texcoords
         };
     }
 
@@ -320,6 +348,8 @@ public:
             {VkDescriptorBufferInfo{vertexBuffer->getBuffer(), 0, VK_WHOLE_SIZE}},
             {VkDescriptorBufferInfo{indexBuffer->getBuffer(), 0, VK_WHOLE_SIZE}},
             {VkDescriptorBufferInfo{materialBuffer->getBuffer(), 0, VK_WHOLE_SIZE}},
+            {VkDescriptorBufferInfo{normalBuffer->getBuffer(), 0, VK_WHOLE_SIZE}},
+            {VkDescriptorBufferInfo{texcoordBuffer->getBuffer(), 0, VK_WHOLE_SIZE}},
         };
     }
 };

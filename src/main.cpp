@@ -212,7 +212,7 @@ private:
 
 int main(int argc, char *argv[])
 {
-    std::string configPath = "../config.json";
+    std::string configPath = "../../config.json";
     for (int i = 1; i < argc; i++)
     {
         std::string arg = argv[i];

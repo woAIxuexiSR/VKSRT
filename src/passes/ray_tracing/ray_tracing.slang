@@ -18,6 +18,20 @@ struct CameraProperties
     float4x4 projInverse;
 };
 
+struct Material
+{
+    float4 baseColor;
+    float4 emission;
+    float metallic;
+    float roughness;
+    float ior;
+    int type;
+    int diffuseTexIndex;
+    int _pad0;
+    int _pad1;
+    int _pad2;
+};
+
 [[vk::binding(0)]]
 RWTexture2D<float4> image;
 
@@ -28,13 +42,19 @@ ConstantBuffer<CameraProperties> cam;
 RaytracingAccelerationStructure topLevelAS;
 
 [[vk::binding(3)]]
-StructuredBuffer<float> vertices;
+StructuredBuffer<float3> vertices;
 
 [[vk::binding(4)]]
 StructuredBuffer<uint> indices;
 
 [[vk::binding(5)]]
-StructuredBuffer<float4> materials;
+StructuredBuffer<Material> materials;
+
+[[vk::binding(6)]]
+StructuredBuffer<float3> normals;
+
+[[vk::binding(7)]]
+StructuredBuffer<float2> texcoords;
 
 struct HitGroupSBT
 {
@@ -98,8 +118,37 @@ void missMain(inout RayPayload payload)
 [shader("closesthit")]
 void closestHitMain(inout RayPayload payload, BuiltInTriangleIntersectionAttributes attribs)
 {
-    float4 matColor = materials[sbt.matIndex];
+    Material mat = materials[sbt.matIndex];
+
+    // Interpolate normal using barycentric coordinates
+    float3 bary = float3(1.0 - attribs.barycentrics.x - attribs.barycentrics.y,
+                         attribs.barycentrics.x, attribs.barycentrics.y);
+
+    uint triIdx = PrimitiveIndex();
+    uint i0 = indices[(sbt.indexOffset + triIdx) * 3 + 0];
+    uint i1 = indices[(sbt.indexOffset + triIdx) * 3 + 1];
+    uint i2 = indices[(sbt.indexOffset + triIdx) * 3 + 2];
+
+    float3 n0 = normals[i0 + sbt.vertexOffset];
+    float3 n1 = normals[i1 + sbt.vertexOffset];
+    float3 n2 = normals[i2 + sbt.vertexOffset];
+    float3 N = normalize(bary.x * n0 + bary.y * n1 + bary.z * n2);
+
+    float3 albedo = mat.baseColor.rgb;
+
+    // Emissive materials emit directly
+    if (mat.type == 3)
+    {
+        payload.isHit = 1;
+        payload.color = mat.emission.rgb * mat.emission.a;
+        return;
+    }
+
+    // Basic diffuse shading with a simple directional light + ambient
+    float3 lightDir = normalize(float3(0.5, 1.0, -0.3));
+    float NdotL = max(dot(N, lightDir), 0.0);
+    float3 diffuse = albedo * (0.3 + 0.7 * NdotL);
 
     payload.isHit = 1;
-    payload.color = matColor.xyz;
+    payload.color = diffuse;
 }

@@ -4,6 +4,7 @@
 #include "pipeline.h"
 #include "resource.h"
 #include "ray_tracing_model.h"
+#include "scene_loader.h"
 #include "camera.h"
 
 #include <memory>
@@ -33,8 +34,6 @@ private:
     Camera camera;
     float lastTime{0.0f};
     bool firstFrame{true};
-
-    void createScene();
 
 public:
     RayTracingPass(Device &_d, SwapChain &_sc, const json &params);

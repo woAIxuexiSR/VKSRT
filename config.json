@@ -2,7 +2,12 @@
   "passes": [
     {
       "type": "ray_tracing",
-      "name": "rt"
+      "name": "rt",
+      "params": {
+        "scene": {
+          "type": "cornell_box"
+        }
+      }
     },
     {
       "type": "tonemap",

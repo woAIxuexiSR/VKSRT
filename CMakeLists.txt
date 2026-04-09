@@ -12,6 +12,7 @@ find_package(glfw3 CONFIG REQUIRED)
 find_package(Vulkan REQUIRED)
 find_package(Stb REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(assimp CONFIG REQUIRED)
 
 # imgui
 set(IMGUI_DIR "D:/software/imgui/")
@@ -106,6 +107,7 @@ target_link_libraries(core PRIVATE
     Vulkan::Vulkan
     glfw
     imgui
+    assimp::assimp
 )
 
 # passes library

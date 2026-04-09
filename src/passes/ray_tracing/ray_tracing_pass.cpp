@@ -5,19 +5,6 @@
 
 REGISTER_RENDER_PASS_CPP(RayTracingPass, "ray_tracing");
 
-void RayTracingPass::createScene()
-{
-    std::vector<glm::vec3> vertices = {
-        {0.0f, 0.0f, 0.0f},
-        {1.0f, 0.0f, 0.0f},
-        {0.5f, 1.0f, 0.0f},
-    };
-    std::vector<glm::uvec3> indices = {{0, 1, 2}};
-    model.insertMesh(vertices, indices, glm::vec4(0.0f, 1.0f, 0.0f, 0.0f));
-
-    model.buildAccelerationStructures();
-}
-
 RayTracingPass::RayTracingPass(Device &_d, SwapChain &_sc, const json &params)
     : PassBase(_d, _sc),
       colorImage{_d, VK_FORMAT_R32G32B32A32_SFLOAT, _sc.getExtent(),
@@ -27,7 +14,30 @@ RayTracingPass::RayTracingPass(Device &_d, SwapChain &_sc, const json &params)
       camera{{0.5f, -2.0f, 0.5f}, {0.5f, 0.0f, 0.5f},
              _sc.getExtent().width / (float)_sc.getExtent().height, 45.0f, 0.1f, 100.0f}
 {
-    createScene();
+    // Load scene from params
+    if (params.contains("scene"))
+    {
+        auto &scene = params["scene"];
+        std::string type = scene.value("type", "cornell_box");
+        if (type == "model")
+        {
+            std::string path = scene.at("path");
+            float scale = scene.value("scale", 1.0f);
+            glm::vec3 offset = {0, 0, 0};
+            if (scene.contains("offset"))
+            {
+                auto &o = scene["offset"];
+                offset = {o[0].get<float>(), o[1].get<float>(), o[2].get<float>()};
+            }
+            SceneLoader::loadModel(path, model, scale, offset);
+        }
+        else
+            SceneLoader::buildCornellBox(model);
+    }
+    else
+        SceneLoader::buildCornellBox(model);
+
+    model.buildAccelerationStructures();
 
     // Register output slot
     outputs["color"] = {
