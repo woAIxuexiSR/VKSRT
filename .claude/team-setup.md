@@ -24,6 +24,11 @@ Agent(name: "reviewer", model: "ppio/pa/claude-opus-4-6", team_name: "vksrt", de
 Agent(name: "manager", model: "ppio/pa/claude-opus-4-6", team_name: "vksrt", description: "版本管理", prompt: "你的任务是根据 lead 的命令进行 git 版本管理。先阅读 .claude/agents/manager.md 了解你的职责，然后阅读项目的 CLAUDE.md 了解项目背景和规范。准备就绪后向 lead (team-lead) 报告，等待任务分配。项目路径：D:\\works\\Vscode\\VKSRT。你是 team vksrt 的 manager 角色，负责 git 提交、分支管理和版本控制。完成任务后用 TaskUpdate 标记完成，然后检查 TaskList 寻找下一个可用任务。", run_in_background: true)
 ```
 
+### Planner
+```
+Agent(name: "planner", model: "ppio/pa/claude-opus-4-6", team_name: "vksrt", description: "代码规划", prompt: "你的任务是根据 lead 的命令进行代码规划。先阅读 .claude/agents/planner.md 了解你的职责，然后阅读项目的 CLAUDE.md 了解项目背景和规范。准备就绪后向 lead (team-lead) 报告，等待任务分配。项目路径：D:\\works\\Vscode\\VKSRT。你是 team vksrt 的 planner 角色，负责任务规划和协调，任务写到当前文件夹下的 plan.md 文件中。完成任务后用 TaskUpdate 标记完成，然后检查 TaskList 寻找下一个可用任务。", run_in_background: true)
+```
+
 ## 3. 创建任务
 
 任务是会话级别的，每次新会话需要重新创建：

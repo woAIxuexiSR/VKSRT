@@ -1,0 +1,62 @@
+#include "tonemap_pass.h"
+
+REGISTER_RENDER_PASS_CPP(TonemapPass, "tonemap");
+
+TonemapPass::TonemapPass(Device &_d, SwapChain &_sc, const json &params)
+    : PassBase(_d, _sc),
+      ldrImage{_d, VK_FORMAT_R8G8B8A8_UNORM, _sc.getExtent(),
+               VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT}
+{
+    outputs["color"] = {
+        ldrImage.getImage(),
+        ldrImage.getImageView(),
+        ldrImage.getSampler(),
+        VK_FORMAT_R8G8B8A8_UNORM,
+        ldrImage.getExtent(),
+        VK_IMAGE_LAYOUT_GENERAL,
+    };
+}
+
+void TonemapPass::init()
+{
+    auto &input = inputs.at("color");
+
+    tonemapPipeline = std::make_unique<ComputePipeline>(
+        device, 1,
+        std::vector<DescriptorLayoutBinding>{
+            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT},
+            {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT},
+        },
+        "../shaders/tonemap/tonemap.slang.spv");
+
+    tonemapPipeline->updateDescriptorSets({
+        {VkDescriptorImageInfo{input.sampler, input.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}},
+        {VkDescriptorImageInfo{ldrImage.getSampler(), ldrImage.getImageView(), VK_IMAGE_LAYOUT_GENERAL}},
+    });
+}
+
+void TonemapPass::recordCommand(VkCommandBuffer commandBuffer,
+                                uint32_t currentFrame, uint32_t imageIndex)
+{
+    auto &input = inputs.at("color");
+    auto extent = ldrImage.getExtent();
+
+    // Transition RT output from GENERAL to SHADER_READ_ONLY for compute read
+    device.imageBarrier(commandBuffer, input.image,
+                        VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                        VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT,
+                        VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, 1);
+
+    // Transition LDR image to GENERAL for compute write
+    device.imageBarrier(commandBuffer, ldrImage.getImage(),
+                        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
+                        0, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+                        VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, 1);
+
+    // Dispatch tonemap compute shader
+    tonemapPipeline->bindPipeline(commandBuffer);
+    tonemapPipeline->bindDescriptorSets(commandBuffer, currentFrame);
+    uint32_t groupsX = (extent.width + 15) / 16;
+    uint32_t groupsY = (extent.height + 15) / 16;
+    vkCmdDispatch(commandBuffer, groupsX, groupsY, 1);
+}

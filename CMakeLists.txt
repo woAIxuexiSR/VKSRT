@@ -11,6 +11,7 @@ find_package(glm CONFIG REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(Vulkan REQUIRED)
 find_package(Stb REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 
 # imgui
 set(IMGUI_DIR "D:/software/imgui/")
@@ -81,18 +82,19 @@ endforeach()
 
 add_custom_target(shaders ALL DEPENDS ${SPIRV_BINARY_FILES})
 
-# core library
+# include directories
 include_directories(
     ${CMAKE_SOURCE_DIR}/src/core
     ${CMAKE_SOURCE_DIR}/src/scene
     ${CMAKE_SOURCE_DIR}/src/gui
     ${CMAKE_SOURCE_DIR}/src/passes
-    ${CMAKE_SOURCE_DIR}/src/passes/triangle
     ${CMAKE_SOURCE_DIR}/src/passes/ray_tracing
     ${CMAKE_SOURCE_DIR}/src/passes/tonemap
+    ${CMAKE_SOURCE_DIR}/src/passes/blit
 )
 include_directories(${Stb_INCLUDE_DIR})
 
+# core library
 file(GLOB CORE_FILES
     "${CMAKE_SOURCE_DIR}/src/core/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/scene/*.cpp"
@@ -106,6 +108,23 @@ target_link_libraries(core PRIVATE
     imgui
 )
 
+# passes library
+file(GLOB PASSES_FILES
+    "${CMAKE_SOURCE_DIR}/src/passes/*.cpp"
+    "${CMAKE_SOURCE_DIR}/src/passes/ray_tracing/*.cpp"
+    "${CMAKE_SOURCE_DIR}/src/passes/tonemap/*.cpp"
+    "${CMAKE_SOURCE_DIR}/src/passes/blit/*.cpp"
+)
+add_library(passes STATIC ${PASSES_FILES})
+target_link_libraries(passes PRIVATE
+    glm::glm
+    Vulkan::Vulkan
+    glfw
+    imgui
+    core
+    nlohmann_json::nlohmann_json
+)
+
 # main executable
 add_executable(main "${CMAKE_SOURCE_DIR}/src/main.cpp")
 target_link_libraries(main PRIVATE
@@ -114,5 +133,15 @@ target_link_libraries(main PRIVATE
     glfw
     imgui
     core
+    passes
+    nlohmann_json::nlohmann_json
 )
+
+# Force linker to include all symbols from passes lib (needed for self-registration)
+if(MSVC)
+    target_link_options(main PRIVATE "/WHOLEARCHIVE:passes")
+else()
+    target_link_libraries(main PRIVATE -Wl,--whole-archive passes -Wl,--no-whole-archive)
+endif()
+
 add_dependencies(main shaders)

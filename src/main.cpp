@@ -9,8 +9,6 @@
 #include "pipeline.h"
 #include "imgui_renderer.h"
 #include "pass_base.h"
-#include "ray_tracing/ray_tracing_pass.h"
-#include "tonemap/tonemap_pass.h"
 
 static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 static constexpr int WIDTH = 1600, HEIGHT = 1200;
@@ -25,8 +23,7 @@ public:
     ImGUIRenderer imguiRenderer{device, window, *swapChain, MAX_FRAMES_IN_FLIGHT};
 
     std::vector<VkCommandBuffer> commandBuffers;
-    std::unique_ptr<RayTracingPass> rtPass;
-    std::unique_ptr<TonemapPass> tonemapPass;
+    std::vector<std::shared_ptr<PassBase>> passes;
     uint32_t currentFrame{0};
 
 public:
@@ -43,8 +40,20 @@ public:
         if (vkAllocateCommandBuffers(device.getDevice(), &allocInfo, commandBuffers.data()) != VK_SUCCESS)
             throw std::runtime_error("failed to allocate command buffers!");
 
-        rtPass = std::make_unique<RayTracingPass>(device, *swapChain);
-        tonemapPass = std::make_unique<TonemapPass>(device, *swapChain, rtPass->getColorImage());
+        RenderPassFactory::printRegistered();
+
+        // Create passes via factory
+        passes.push_back(RenderPassFactory::createPass("ray_tracing", device, *swapChain));
+        passes.push_back(RenderPassFactory::createPass("tonemap", device, *swapChain));
+        passes.push_back(RenderPassFactory::createPass("blit", device, *swapChain));
+
+        // Wire pass chain: ray_tracing -> tonemap -> blit
+        passes[1]->setInput("color", passes[0]->getOutput("color"));
+        passes[2]->setInput("color", passes[1]->getOutput("color"));
+
+        // Init all passes (creates pipelines after wiring)
+        for (auto &pass : passes)
+            pass->init();
     }
 
     void run()
@@ -84,7 +93,11 @@ private:
             throw std::runtime_error("failed to acquire swap chain image!");
 
         auto &inputState = window.getInputState();
-        rtPass->update(currentFrame, inputState);
+
+        // Update all passes
+        for (auto &pass : passes)
+            if (pass->isEnabled())
+                pass->update(currentFrame, inputState);
 
         // ImGui
         ImGui_ImplVulkan_NewFrame();
@@ -95,7 +108,9 @@ private:
         ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_Once);
         ImGui::Begin("VKSRT");
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
-        rtPass->drawUI();
+        for (auto &pass : passes)
+            if (pass->isEnabled())
+                pass->drawUI();
         ImGui::End();
 
         ImGui::Render();
@@ -109,8 +124,9 @@ private:
         if (vkBeginCommandBuffer(commandBuffers[currentFrame], &beginInfo) != VK_SUCCESS)
             throw std::runtime_error("failed to begin recording command buffer!");
 
-        rtPass->recordCommand(commandBuffers[currentFrame], *swapChain, currentFrame, imageIndex);
-        tonemapPass->recordCommand(commandBuffers[currentFrame], *swapChain, currentFrame, imageIndex);
+        for (auto &pass : passes)
+            if (pass->isEnabled())
+                pass->recordCommand(commandBuffers[currentFrame], currentFrame, imageIndex);
 
         if (vkEndCommandBuffer(commandBuffers[currentFrame]) != VK_SUCCESS)
             throw std::runtime_error("failed to record command buffer!");
@@ -129,7 +145,10 @@ private:
         else if (result != VK_SUCCESS)
             throw std::runtime_error("failed to present swap chain image!");
 
-        rtPass->endFrame();
+        for (auto &pass : passes)
+            if (pass->isEnabled())
+                pass->endFrame();
+
         window.resetInputState();
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     }
