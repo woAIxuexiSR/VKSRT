@@ -41,6 +41,7 @@ PathTracingPass::PathTracingPass(Device &_d, SwapChain &_sc, const json &params)
         SceneLoader::buildCornellBox(model);
 
     model.buildAccelerationStructures();
+    pushConstants.lightCount = model.getLightCount();
 }
 
 void PathTracingPass::init()
@@ -73,10 +74,37 @@ void PathTracingPass::drawUI()
     ImGui::SliderInt("Max Depth", &pushConstants.maxDepth, 1, 32);
     ImGui::SliderInt("RR Depth", &pushConstants.rrDepth, 1, 16);
     ImGui::Text("Frame Index: %d", pushConstants.frameIndex);
+
+    ImGui::Separator();
+    ImGui::Text("Light Count: %d", pushConstants.lightCount);
+    bool nee = pushConstants.useNEE != 0;
+    if (ImGui::Checkbox("Use NEE", &nee))
+        pushConstants.useNEE = nee ? 1 : 0;
+    if (pushConstants.useNEE)
+    {
+        bool mis = pushConstants.useMIS != 0;
+        if (ImGui::Checkbox("Use MIS", &mis))
+            pushConstants.useMIS = mis ? 1 : 0;
+    }
 }
 
 void PathTracingPass::update(uint32_t currentFrame, InputState &inputState)
 {
+    // Detect NEE/MIS parameter changes to trigger accumulate reset
+    static int lastNEE = pushConstants.useNEE;
+    static int lastMIS = pushConstants.useMIS;
+    static int lastMaxDepth = pushConstants.maxDepth;
+    static int lastRRDepth = pushConstants.rrDepth;
+    if (pushConstants.useNEE != lastNEE || pushConstants.useMIS != lastMIS ||
+        pushConstants.maxDepth != lastMaxDepth || pushConstants.rrDepth != lastRRDepth)
+    {
+        inputState.keyboardChanged = true;
+        lastNEE = pushConstants.useNEE;
+        lastMIS = pushConstants.useMIS;
+        lastMaxDepth = pushConstants.maxDepth;
+        lastRRDepth = pushConstants.rrDepth;
+    }
+
     if (!inputState.isChanged())
         pushConstants.frameIndex++;
     else

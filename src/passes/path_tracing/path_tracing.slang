@@ -5,6 +5,7 @@ import material;
 import brdf;
 import onb;
 import rng;
+import math_utils;
 
 // --- Payload: closesthit returns geometry info, raygen does shading ---
 
@@ -28,6 +29,9 @@ struct PushConstants
     int frameIndex;
     int maxDepth;
     int rrDepth;
+    int lightCount;
+    int useNEE;
+    int useMIS;
 };
 
 [[vk::push_constant]]
@@ -57,6 +61,17 @@ StructuredBuffer<float> normalData;
 [[vk::binding(7)]]
 StructuredBuffer<float2> texcoords;
 
+struct LightTriangle
+{
+    float area;
+    int indexOffset;
+    int vertexOffset;
+    int matIndex;
+};
+
+[[vk::binding(8)]]
+StructuredBuffer<LightTriangle> lights;
+
 float3 getVertex(uint index)
 {
     return float3(vertexData[index * 3], vertexData[index * 3 + 1], vertexData[index * 3 + 2]);
@@ -65,6 +80,14 @@ float3 getVertex(uint index)
 float3 getNormal(uint index)
 {
     return float3(normalData[index * 3], normalData[index * 3 + 1], normalData[index * 3 + 2]);
+}
+
+uint3 getTriIndices(int indexOffset)
+{
+    return uint3(
+        indices[indexOffset * 3 + 0],
+        indices[indexOffset * 3 + 1],
+        indices[indexOffset * 3 + 2]);
 }
 
 struct HitGroupSBT
@@ -102,6 +125,7 @@ void raygenMain()
 
     float3 L = float3(0.0);
     float3 beta = float3(1.0);
+    float prevBsdfPdf = 0.0; // tracks BRDF pdf for MIS when hitting emissive
 
     for (int depth = 0; depth < pc.maxDepth; depth++)
     {
@@ -115,19 +139,50 @@ void raygenMain()
         payload.isHit = 0;
         TraceRay(topLevelAS, RAY_FLAG_FORCE_OPAQUE, 0xff, 0, 0, 0, ray, payload);
 
-        // Miss: add background and terminate
+        // Miss: terminate
         if (payload.isHit == 0)
-        {
-            L += beta * float3(0.0);
             break;
-        }
 
         Material mat = materials[payload.matIndex];
 
-        // Hit emissive surface: add emission and terminate
+        // Hit emissive surface: add emission with MIS weight
         if (mat.type == MAT_EMISSIVE)
         {
-            L += beta * mat.emission.rgb * mat.emission.a;
+            float3 emission = mat.emission.rgb * mat.emission.a;
+            float misWeight = 1.0;
+
+            if (depth > 0 && pc.useNEE != 0 && pc.lightCount > 0)
+            {
+                if (prevBsdfPdf <= 0.0)
+                {
+                    // Delta BRDF: NEE cannot sample this direction, full weight to BRDF path
+                    misWeight = 1.0;
+                }
+                else if (pc.useMIS != 0)
+                {
+                    // Compute light sampling PDF for this hit
+                    float3 hitNormal = normalize(payload.hitNormal);
+                    float dist2 = dot(rayPos - payload.hitPos, rayPos - payload.hitPos);
+                    float cosLight = abs(dot(hitNormal, normalize(rayPos - payload.hitPos)));
+                    float totalArea = 0.0;
+                    for (int li = 0; li < pc.lightCount; li++)
+                        totalArea += lights[li].area;
+                    if (cosLight > 1e-4 && totalArea > 0.0)
+                    {
+                        float pdfLight = dist2 / (totalArea * cosLight);
+                        misWeight = powerHeuristic(prevBsdfPdf, pdfLight);
+                    }
+                    else
+                        misWeight = 0.0;
+                }
+                else
+                {
+                    // NEE on but MIS off: BRDF path should not count emissive hits
+                    misWeight = 0.0;
+                }
+            }
+
+            L += beta * emission * misWeight;
             break;
         }
 
@@ -135,21 +190,82 @@ void raygenMain()
         float3 shadingN = payload.hitNormal;
         if (mat.type != MAT_DIELECTRIC)
         {
-            // Non-dielectric: flip normal to face incoming ray
             if (dot(shadingN, rayDir) > 0.0)
                 shadingN = -shadingN;
         }
 
-        // Build local coordinate frame at hit point
+        // --- NEE: Direct light sampling ---
+        if (pc.useNEE != 0 && pc.lightCount > 0 && mat.type == MAT_LAMBERTIAN)
+        {
+            int lightIdx = int(randFloat(seed) * float(pc.lightCount));
+            lightIdx = min(lightIdx, pc.lightCount - 1);
+
+            LightTriangle lt = lights[lightIdx];
+            uint3 triIdx = getTriIndices(lt.indexOffset);
+            float3 lv0 = getVertex(triIdx.x + lt.vertexOffset);
+            float3 lv1 = getVertex(triIdx.y + lt.vertexOffset);
+            float3 lv2 = getVertex(triIdx.z + lt.vertexOffset);
+
+            float3 lightPoint = samplePointOnTriangle(lv0, lv1, lv2, randFloat2(seed));
+            float3 lightNormal = normalize(cross(lv1 - lv0, lv2 - lv0));
+
+            float3 toLight = lightPoint - payload.hitPos;
+            float dist = length(toLight);
+            float3 lightDir = toLight / dist;
+
+            float cosHit = dot(shadingN, lightDir);
+            float cosLight = abs(dot(lightNormal, -lightDir));
+
+            if (cosHit > 1e-4 && cosLight > 1e-4)
+            {
+                RayDesc shadowRay;
+                shadowRay.Origin = payload.hitPos;
+                shadowRay.Direction = lightDir;
+                shadowRay.TMin = 0.001;
+                shadowRay.TMax = dist - 0.001;
+
+                RayPayload shadowPayload;
+                shadowPayload.isHit = 0;
+                TraceRay(topLevelAS,
+                         RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
+                         0xff, 0, 0, 0, shadowRay, shadowPayload);
+
+                if (shadowPayload.isHit == 0)
+                {
+                    Material lightMat = materials[lt.matIndex];
+                    float3 lightEmission = lightMat.emission.rgb * lightMat.emission.a;
+
+                    float pdfLight = (dist * dist) / (lt.area * cosLight * float(pc.lightCount));
+
+                    ONB neeBasis = buildONB(shadingN);
+                    float3 wi = worldToLocal(neeBasis, lightDir);
+                    float3 wo_nee = worldToLocal(neeBasis, -rayDir);
+                    float3 bsdfVal = brdfEval(wi, wo_nee, mat);
+
+                    float w = 1.0;
+                    if (pc.useMIS != 0)
+                    {
+                        float pdfBsdf = brdfPdf(wi, wo_nee, mat);
+                        w = powerHeuristic(pdfLight, pdfBsdf);
+                    }
+
+                    L += beta * bsdfVal * lightEmission * cosHit * w / pdfLight;
+                }
+            }
+        }
+
+        // --- BRDF importance sampling for next bounce ---
         ONB basis = buildONB(shadingN);
         float3 wo = worldToLocal(basis, -rayDir);
 
-        // BRDF importance sampling
-        float2 rng = randFloat2(seed);
-        BRDFSample s = brdfSample(wo, mat, rng);
+        float2 rng2 = randFloat2(seed);
+        BRDFSample s = brdfSample(wo, mat, rng2);
 
         if (!s.valid || s.pdf < 1e-6)
             break;
+
+        // Track BRDF pdf for MIS on next emissive hit
+        prevBsdfPdf = s.isDelta ? 0.0 : s.pdf;
 
         // Update throughput
         if (s.isDelta)

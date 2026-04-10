@@ -30,6 +30,8 @@ private:
     std::unique_ptr<StorageBufferResource> materialBuffer;
     std::unique_ptr<StorageBufferResource> transformBuffer;
     std::unique_ptr<StorageBufferResource> instanceBuffer;
+    std::unique_ptr<StorageBufferResource> lightBuffer;
+    int lightCount{0};
 
     std::vector<VkAccelerationStructureKHR> blas;
     std::vector<std::unique_ptr<StorageBufferResource>> blasBuffers;
@@ -66,6 +68,50 @@ private:
     uint32_t alignedSize(uint32_t value, uint32_t alignment)
     {
         return ((value + alignment - 1) / alignment) * alignment;
+    }
+
+    void buildLightBuffer()
+    {
+        std::vector<LightTriangle> lights;
+
+        for (size_t meshIdx = 0; meshIdx < hitSBTRecords.size(); meshIdx++)
+        {
+            if (materials[meshIdx].type != MAT_EMISSIVE)
+                continue;
+
+            int vOff = hitSBTRecords[meshIdx].vertexOffset;
+            int iOff = hitSBTRecords[meshIdx].indexOffset;
+            int triCount;
+            if (meshIdx + 1 < hitSBTRecords.size())
+                triCount = hitSBTRecords[meshIdx + 1].indexOffset - iOff;
+            else
+                triCount = static_cast<int>(indices.size()) - iOff;
+
+            for (int t = 0; t < triCount; t++)
+            {
+                glm::uvec3 tri = indices[iOff + t];
+                glm::vec3 v0 = vertices[tri.x + vOff];
+                glm::vec3 v1 = vertices[tri.y + vOff];
+                glm::vec3 v2 = vertices[tri.z + vOff];
+                float area = 0.5f * glm::length(glm::cross(v1 - v0, v2 - v0));
+
+                LightTriangle lt{};
+                lt.area = area;
+                lt.indexOffset = iOff + t;
+                lt.vertexOffset = vOff;
+                lt.matIndex = hitSBTRecords[meshIdx].materialIndex;
+                lights.push_back(lt);
+            }
+        }
+
+        lightCount = static_cast<int>(lights.size());
+        if (lights.empty())
+            lights.push_back(LightTriangle{});
+
+        lightBuffer = std::make_unique<StorageBufferResource>(
+            device, sizeof(LightTriangle) * lights.size(),
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+        lightBuffer->update(lights.data());
     }
 
     void createBLAS()
@@ -322,8 +368,11 @@ public:
             throw std::runtime_error("Acceleration structures already built!");
         createBLAS();
         createTLAS();
+        buildLightBuffer();
         finishBuild = true;
     }
+
+    int getLightCount() const { return lightCount; }
 
     const std::vector<HitSBTRecord> &getHitSBTRecords() const { return hitSBTRecords; }
 
@@ -337,6 +386,7 @@ public:
             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, hitStages}, // materials
             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, hitStages}, // normals
             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, hitStages}, // texcoords
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR}, // lights
         };
     }
 
@@ -350,6 +400,7 @@ public:
             {VkDescriptorBufferInfo{materialBuffer->getBuffer(), 0, VK_WHOLE_SIZE}},
             {VkDescriptorBufferInfo{normalBuffer->getBuffer(), 0, VK_WHOLE_SIZE}},
             {VkDescriptorBufferInfo{texcoordBuffer->getBuffer(), 0, VK_WHOLE_SIZE}},
+            {VkDescriptorBufferInfo{lightBuffer->getBuffer(), 0, VK_WHOLE_SIZE}},
         };
     }
 };

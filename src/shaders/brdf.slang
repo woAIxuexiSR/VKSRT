@@ -4,8 +4,7 @@ module brdf;
 
 import material;
 import onb;
-
-static const float PI = 3.14159265358979323846;
+import math_utils;
 
 // Return value for BRDF sampling
 public struct BRDFSample
@@ -119,23 +118,7 @@ public float brdfPdf(float3 wi, float3 wo, Material mat)
     }
 }
 
-// --- Helpers ---
-
-float3 cosineSampleHemisphere(float2 u)
-{
-    float phi = 2.0 * PI * u.x;
-    float cosTheta = sqrt(1.0 - u.y);
-    float sinTheta = sqrt(u.y);
-    return float3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
-}
-
-float schlickFresnel(float cosTheta, float etaRatio)
-{
-    float r0 = (1.0 - etaRatio) / (1.0 + etaRatio);
-    r0 = r0 * r0;
-    float x = 1.0 - cosTheta;
-    return r0 + (1.0 - r0) * x * x * x * x * x;
-}
+// --- Local-space helpers ---
 
 float3 reflectLocal(float3 wo)
 {
@@ -150,12 +133,4 @@ float3 refractLocal(float3 wo, float etaRatio)
     float cosT = sqrt(1.0 - sin2T);
     float signZ = (wo.z > 0.0) ? -1.0 : 1.0;
     return float3(-etaRatio * wo.x, -etaRatio * wo.y, signZ * cosT);
-}
-
-float3 randomOnSphere(float2 u)
-{
-    float z = 1.0 - 2.0 * u.x;
-    float r = sqrt(max(0.0, 1.0 - z * z));
-    float phi = 2.0 * PI * u.y;
-    return float3(r * cos(phi), r * sin(phi), z);
 }

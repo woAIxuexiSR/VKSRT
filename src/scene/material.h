@@ -25,3 +25,12 @@ struct Material
 };
 // Must match src/shaders/material.slang layout exactly
 static_assert(sizeof(Material) == 64, "Material must be 64 bytes to match Slang layout");
+
+struct LightTriangle
+{
+    float area;        // triangle surface area
+    int indexOffset;   // triangle index in global index buffer (which triangle)
+    int vertexOffset;  // vertex offset in global vertex buffer
+    int matIndex;      // material index for emission lookup
+};
+static_assert(sizeof(LightTriangle) == 16, "LightTriangle must be 16 bytes to match Slang layout");

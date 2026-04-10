@@ -19,6 +19,9 @@ struct PTPushConstants
     int frameIndex{0};
     int maxDepth{8};
     int rrDepth{3};
+    int lightCount{0};
+    int useNEE{1};
+    int useMIS{1};
 };
 
 class PathTracingPass : public PassBase

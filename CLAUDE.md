@@ -83,10 +83,28 @@ passes 编译为独立静态库，链接到 main。
 - [x] 相机控制（camera.h/cpp，支持输入和多帧累积重置）
 - [x] Pass 架构重构（工厂模式 + PassImageSlot 链式传递）
 
-### M4: Path Tracing Cornell Box
-- 升级为 Path Tracing（多次弹射）
-- 多帧累积（progressive rendering）
-- 相机控制
+### M4: Path Tracing Cornell Box [已完成]
+- [x] Accumulate Pass 解耦（独立帧累积 compute pass）
+- [x] PassImageSlot 链式动态传递重构（disabled 零开销透传）
+- [x] 相机 UI 解耦（Application 管理，独立 ImGui section）
+- [x] 完整 Path Tracing（多次弹射、Russian Roulette、BRDF 采样）
+- [x] StructuredBuffer<float3> 对齐修复
+- [x] ray_tracing pass 改为可视化调试工具
+- [x] Cornell Box 经典场景（两个 box + Metal 镜面墙）
+- [x] 截图功能（Save Image to PNG）
+
+### M5: 高级渲染特性
+- NEE（Next Event Estimation + MIS）
+- 双边滤波 Pass（Bilateral Denoise）
+- TAA Pass（Temporal Anti-Aliasing）
+
+### M6: 其他积分方式
+- Light Tracer
+- Wavefront Path Tracing
+
+### M7: Stylized 渲染
+- Branch MC
+- 卡通渲染 idea 实现
 
 ## Build Commands
 ```bash
