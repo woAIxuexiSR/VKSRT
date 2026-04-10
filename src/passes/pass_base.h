@@ -10,6 +10,7 @@
 #include <functional>
 #include <iostream>
 #include <nlohmann/json.hpp>
+#include "imgui.h"
 
 using json = nlohmann::json;
 
@@ -34,8 +35,7 @@ protected:
     SwapChain &swapChain;
     bool enabled = true;
 
-    std::unordered_map<std::string, PassImageSlot> inputs;
-    std::unordered_map<std::string, PassImageSlot> outputs;
+    PassImageSlot initInputSlot;
 
 public:
     PassBase(Device &_d, SwapChain &_sc) : device(_d), swapChain(_sc) {}
@@ -53,26 +53,33 @@ public:
     virtual bool canDisable() const { return true; }
 
     // --- Image slot wiring ---
-    void setInput(const std::string &name, const PassImageSlot &slot)
-    {
-        inputs[name] = slot;
-    }
-
-    PassImageSlot getOutput(const std::string &name) const
-    {
-        auto it = outputs.find(name);
-        if (it == outputs.end())
-            throw std::runtime_error("PassBase::getOutput: slot '" + name + "' not found");
-        return it->second;
-    }
+    void setInputSlot(const PassImageSlot &slot) { initInputSlot = slot; }
+    virtual PassImageSlot getOutputSlot() const { return initInputSlot; }
 
     // --- Lifecycle ---
     virtual void init() {}
     virtual void update(uint32_t currentFrame, InputState &inputState) {}
-    virtual void recordCommand(VkCommandBuffer commandBuffer,
-                               uint32_t currentFrame, uint32_t imageIndex) = 0;
+    virtual PassImageSlot recordCommand(VkCommandBuffer commandBuffer,
+                                        const PassImageSlot &inputSlot,
+                                        uint32_t currentFrame, uint32_t imageIndex)
+    {
+        return inputSlot;
+    }
     virtual void endFrame() {}
     virtual void drawUI() {}
+
+    // Non-virtual: draws enable checkbox (if canDisable) + calls drawUI
+    void renderUI()
+    {
+        if (canDisable())
+        {
+            bool en = enabled;
+            if (ImGui::Checkbox("Enabled", &en))
+                enabled = en;
+        }
+        if (enabled)
+            drawUI();
+    }
 };
 
 // Factory for creating render passes by name

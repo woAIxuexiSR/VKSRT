@@ -44,9 +44,11 @@ Agent(name: "planner", model: "ppio/pa/claude-opus-4-6", team_name: "vksrt", des
 
 **原则：**
 - 不要一股脑地连续执行多个任务，每个阶段完成后必须同步
+- Team Lead 负责阶段的整体推进和用户沟通，不要自己执行任务，确保每个阶段的输出满足预期
 - Developer 完成实现后必须等 reviewer 审查通过并修复完毕，才能接新任务
 - Reviewer 的修复意见必须被 developer 实际执行并验证，不能跳过
 - Manager 只在阶段完成、审查通过后才做 git commit
+- Planner 只负责交往复杂的任务规划和设计，简单任务由 lead 直接分配给 developer， planner 不需要过度关注细节
 
 ## 4. 创建任务
 

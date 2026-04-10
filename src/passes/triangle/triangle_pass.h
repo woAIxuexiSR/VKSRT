@@ -11,8 +11,8 @@ private:
     std::unique_ptr<GraphicsPipeline> pipeline;
 
 public:
-    TrianglePass(Device &_d, VkFormat swapChainFormat)
-        : PassBase(_d)
+    TrianglePass(Device &_d, SwapChain &_sc, const json &params)
+        : PassBase(_d, _sc)
     {
         pipeline = std::make_unique<GraphicsPipeline>(
             device,
@@ -21,13 +21,14 @@ public:
             std::vector<VkVertexInputBindingDescription>{},   // no vertex input
             std::vector<VkVertexInputAttributeDescription>{},
             "../shaders/triangle/triangle.slang.spv",
-            std::vector<VkFormat>{swapChainFormat});
+            std::vector<VkFormat>{_sc.getImageFormat()});
     }
 
     std::string getName() const override { return "Triangle"; }
 
-    void recordCommand(VkCommandBuffer commandBuffer, SwapChain &swapChain,
-                       uint32_t currentFrame, uint32_t imageIndex) override
+    PassImageSlot recordCommand(VkCommandBuffer commandBuffer,
+                                const PassImageSlot &inputSlot,
+                                uint32_t currentFrame, uint32_t imageIndex) override
     {
         auto extent = swapChain.getExtent();
 
@@ -72,5 +73,7 @@ public:
         vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
         vkCmdEndRendering(commandBuffer);
+
+        return {};
     }
 };

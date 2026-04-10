@@ -72,36 +72,14 @@ public:
             passMap[name] = pass;
         }
 
-        // Phase 2: Wire inputs
-        for (auto &passConfig : config["passes"])
-        {
-            if (!passConfig.contains("inputs"))
-                continue;
-
-            std::string name = passConfig.value("name", passConfig.at("type").get<std::string>());
-            auto &pass = passMap.at(name);
-
-            for (auto &[inputSlot, sourceRef] : passConfig["inputs"].items())
-            {
-                std::string src = sourceRef.get<std::string>();
-                auto dotPos = src.find('.');
-                if (dotPos == std::string::npos)
-                    throw std::runtime_error("invalid input reference '" + src + "', expected 'passName.slotName'");
-
-                std::string srcPass = src.substr(0, dotPos);
-                std::string srcSlot = src.substr(dotPos + 1);
-
-                auto it = passMap.find(srcPass);
-                if (it == passMap.end())
-                    throw std::runtime_error("input references unknown pass '" + srcPass + "'");
-
-                pass->setInput(inputSlot, it->second->getOutput(srcSlot));
-            }
-        }
-
-        // Phase 3: Init all passes (creates pipelines after wiring)
+        // Phase 2: Wire input slots and init passes (chain order)
+        PassImageSlot prevSlot{};
         for (auto &pass : passes)
+        {
+            pass->setInputSlot(prevSlot);
             pass->init();
+            prevSlot = pass->getOutputSlot();
+        }
     }
 
     void run()
@@ -142,10 +120,9 @@ private:
 
         auto &inputState = window.getInputState();
 
-        // Update all passes
+        // Update all passes (always called, even when disabled, for state tracking)
         for (auto &pass : passes)
-            if (pass->isEnabled())
-                pass->update(currentFrame, inputState);
+            pass->update(currentFrame, inputState);
 
         // ImGui
         ImGui_ImplVulkan_NewFrame();
@@ -162,14 +139,7 @@ private:
             if (ImGui::CollapsingHeader(pass->getName().c_str(), ImGuiTreeNodeFlags_DefaultOpen))
             {
                 ImGui::PushID(pass->getName().c_str());
-                if (pass->canDisable())
-                {
-                    bool en = pass->isEnabled();
-                    if (ImGui::Checkbox("Enabled", &en))
-                        pass->setEnabled(en);
-                }
-                if (pass->isEnabled())
-                    pass->drawUI();
+                pass->renderUI();
                 ImGui::PopID();
             }
         }
@@ -186,8 +156,9 @@ private:
         if (vkBeginCommandBuffer(commandBuffers[currentFrame], &beginInfo) != VK_SUCCESS)
             throw std::runtime_error("failed to begin recording command buffer!");
 
+        PassImageSlot slot{};
         for (auto &pass : passes)
-            pass->recordCommand(commandBuffers[currentFrame], currentFrame, imageIndex);
+            slot = pass->recordCommand(commandBuffers[currentFrame], slot, currentFrame, imageIndex);
 
         if (vkEndCommandBuffer(commandBuffers[currentFrame]) != VK_SUCCESS)
             throw std::runtime_error("failed to record command buffer!");

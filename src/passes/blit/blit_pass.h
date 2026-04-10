@@ -11,6 +11,8 @@ class BlitPass : public PassBase
 
 private:
     std::unique_ptr<GraphicsPipeline> blitPipeline;
+    VkImageView lastBoundInputView{VK_NULL_HANDLE};
+    VkSampler lastBoundInputSampler{VK_NULL_HANDLE};
 
 public:
     BlitPass(Device &_d, SwapChain &_sc, const json &params);
@@ -20,6 +22,7 @@ public:
 
     void init() override;
     void drawUI() override;
-    void recordCommand(VkCommandBuffer commandBuffer,
-                       uint32_t currentFrame, uint32_t imageIndex) override;
+    PassImageSlot recordCommand(VkCommandBuffer commandBuffer,
+                                const PassImageSlot &inputSlot,
+                                uint32_t currentFrame, uint32_t imageIndex) override;
 };

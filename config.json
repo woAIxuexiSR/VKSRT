@@ -10,18 +10,16 @@
       }
     },
     {
+      "type": "accumulate",
+      "name": "accumulate"
+    },
+    {
       "type": "tonemap",
-      "name": "tonemap",
-      "inputs": {
-        "color": "rt.color"
-      }
+      "name": "tonemap"
     },
     {
       "type": "blit",
-      "name": "blit",
-      "inputs": {
-        "color": "tonemap.color"
-      }
+      "name": "blit"
     }
   ]
 }

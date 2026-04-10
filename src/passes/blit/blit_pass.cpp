@@ -11,8 +11,6 @@ BlitPass::BlitPass(Device &_d, SwapChain &_sc, const json &params)
 
 void BlitPass::init()
 {
-    auto &input = inputs.at("color");
-
     blitPipeline = std::make_unique<GraphicsPipeline>(
         device, 1,
         std::vector<DescriptorLayoutBinding>{
@@ -24,8 +22,10 @@ void BlitPass::init()
         std::vector<VkFormat>{swapChain.getImageFormat()});
 
     blitPipeline->updateDescriptorSets({
-        {VkDescriptorImageInfo{input.sampler, input.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}},
+        {VkDescriptorImageInfo{initInputSlot.sampler, initInputSlot.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}},
     });
+    lastBoundInputView = initInputSlot.imageView;
+    lastBoundInputSampler = initInputSlot.sampler;
 }
 
 void BlitPass::drawUI()
@@ -34,13 +34,22 @@ void BlitPass::drawUI()
     ImGui::Text("Output: %ux%u", extent.width, extent.height);
 }
 
-void BlitPass::recordCommand(VkCommandBuffer commandBuffer,
-                             uint32_t currentFrame, uint32_t imageIndex)
+PassImageSlot BlitPass::recordCommand(VkCommandBuffer commandBuffer,
+                                       const PassImageSlot &inputSlot,
+                                       uint32_t currentFrame, uint32_t imageIndex)
 {
-    auto &input = inputs.at("color");
+    if (inputSlot.imageView != lastBoundInputView || inputSlot.sampler != lastBoundInputSampler)
+    {
+        vkDeviceWaitIdle(device.getDevice());
+        blitPipeline->updateDescriptorSets({
+            {VkDescriptorImageInfo{inputSlot.sampler, inputSlot.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}},
+        });
+        lastBoundInputView = inputSlot.imageView;
+        lastBoundInputSampler = inputSlot.sampler;
+    }
 
     // Transition input: GENERAL -> SHADER_READ_ONLY for fragment read
-    device.imageBarrier(commandBuffer, input.image,
+    device.imageBarrier(commandBuffer, inputSlot.image,
                         VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                         VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT,
                         VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, 1);
@@ -76,4 +85,6 @@ void BlitPass::recordCommand(VkCommandBuffer commandBuffer,
     vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
     vkCmdEndRendering(commandBuffer);
+
+    return {};
 }

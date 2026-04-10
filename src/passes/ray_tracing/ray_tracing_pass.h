@@ -11,10 +11,6 @@
 
 struct RTUniform
 {
-    alignas(4) int frameIndex{0};
-    alignas(4) int _pad0{0};
-    alignas(4) int _pad1{0};
-    alignas(4) int _pad2{0};
     alignas(16) glm::mat4 viewInverse;
     alignas(16) glm::mat4 projInverse;
 };
@@ -40,10 +36,12 @@ public:
 
     std::string getName() const override { return "RayTracing"; }
     bool canDisable() const override { return false; }
+    PassImageSlot getOutputSlot() const override;
 
     void init() override;
     void drawUI() override;
     void update(uint32_t currentFrame, InputState &inputState) override;
-    void recordCommand(VkCommandBuffer commandBuffer,
-                       uint32_t currentFrame, uint32_t imageIndex) override;
+    PassImageSlot recordCommand(VkCommandBuffer commandBuffer,
+                                const PassImageSlot &inputSlot,
+                                uint32_t currentFrame, uint32_t imageIndex) override;
 };

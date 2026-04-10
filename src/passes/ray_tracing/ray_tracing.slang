@@ -14,10 +14,6 @@ struct RayPayload
 
 struct CameraProperties
 {
-    int frameIndex;
-    int _pad0;
-    int _pad1;
-    int _pad2;
     float4x4 viewInverse;
     float4x4 projInverse;
 };
@@ -84,14 +80,7 @@ void raygenMain()
 
     TraceRay(topLevelAS, RAY_FLAG_FORCE_OPAQUE, 0xff, 0, 0, 0, ray, payload);
 
-    float3 result = payload.color;
-
-    // Progressive accumulation
-    float4 prevColor = float4(0.0, 0.0, 0.0, 0.0);
-    if (cam.frameIndex > 0)
-        prevColor = image[launchID];
-    float3 finalColor = lerp(prevColor.rgb, result, 1.0 / float(cam.frameIndex + 1));
-    image[launchID] = float4(finalColor, 1.0);
+    image[launchID] = float4(payload.color, 1.0);
 }
 
 // --- Miss ---

@@ -38,16 +38,6 @@ RayTracingPass::RayTracingPass(Device &_d, SwapChain &_sc, const json &params)
         SceneLoader::buildCornellBox(model);
 
     model.buildAccelerationStructures();
-
-    // Register output slot
-    outputs["color"] = {
-        colorImage.getImage(),
-        colorImage.getImageView(),
-        colorImage.getSampler(),
-        VK_FORMAT_R32G32B32A32_SFLOAT,
-        colorImage.getExtent(),
-        VK_IMAGE_LAYOUT_GENERAL,
-    };
 }
 
 void RayTracingPass::init()
@@ -75,7 +65,6 @@ void RayTracingPass::init()
 
 void RayTracingPass::drawUI()
 {
-    ImGui::Text("Frame Index: %d", ubo.frameIndex);
     ImGui::Text("Camera Pos: (%.2f, %.2f, %.2f)", camera.pos.x, camera.pos.y, camera.pos.z);
     ImGui::Text("Yaw: %.1f  Pitch: %.1f", camera.yaw, camera.pitch);
     ImGui::Text("FOV: %.1f", camera.fov);
@@ -93,16 +82,12 @@ void RayTracingPass::update(uint32_t currentFrame, InputState &inputState)
     ubo.viewInverse = camera.getInverseViewMatrix();
     ubo.projInverse = camera.getInverseProjectionMatrix();
 
-    if (!inputState.isChanged())
-        ubo.frameIndex++;
-    else
-        ubo.frameIndex = 0;
-
     uniformBuffer.update(&ubo);
 }
 
-void RayTracingPass::recordCommand(VkCommandBuffer commandBuffer,
-                                   uint32_t currentFrame, uint32_t imageIndex)
+PassImageSlot RayTracingPass::recordCommand(VkCommandBuffer commandBuffer,
+                                             const PassImageSlot &inputSlot,
+                                             uint32_t currentFrame, uint32_t imageIndex)
 {
     auto colorExtent = colorImage.getExtent();
 
@@ -120,4 +105,18 @@ void RayTracingPass::recordCommand(VkCommandBuffer commandBuffer,
     rtPipeline->bindPipeline(commandBuffer);
     rtPipeline->bindDescriptorSets(commandBuffer, currentFrame);
     rtPipeline->traceRays(commandBuffer, {colorExtent.width, colorExtent.height, 1});
+
+    return getOutputSlot();
+}
+
+PassImageSlot RayTracingPass::getOutputSlot() const
+{
+    return {
+        colorImage.getImage(),
+        colorImage.getImageView(),
+        colorImage.getSampler(),
+        VK_FORMAT_R32G32B32A32_SFLOAT,
+        colorImage.getExtent(),
+        VK_IMAGE_LAYOUT_GENERAL,
+    };
 }
