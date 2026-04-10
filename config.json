@@ -12,6 +12,9 @@
       "type": "accumulate"
     },
     {
+      "type": "bilateral"
+    },
+    {
       "type": "tonemap"
     },
     {

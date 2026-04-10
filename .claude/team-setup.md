@@ -4,7 +4,7 @@
 
 ## 1. 创建 Team
 ```
-TeamCreate(team_name: "vksrt", description: "完成一个基于 vulkan 的光线追踪渲染器")
+TeamCreate(team_name: "vksrt", description: "VKSRT Vulkan 光线追踪渲染器开发")
 ```
 
 ## 2. 启动 Agents
@@ -44,11 +44,11 @@ Agent(name: "planner", model: "ppio/pa/claude-opus-4-6", team_name: "vksrt", des
 
 **原则：**
 - 不要一股脑地连续执行多个任务，每个阶段完成后必须同步
-- Team Lead 负责阶段的整体推进和用户沟通，不要自己执行任务，确保每个阶段的输出满足预期
-- Developer 完成实现后必须等 reviewer 审查通过并修复完毕，才能接新任务
-- Reviewer 的修复意见必须被 developer 实际执行并验证，不能跳过
-- Manager 只在阶段完成、审查通过后才做 git commit
-- Planner 只负责交往复杂的任务规划和设计，简单任务由 lead 直接分配给 developer， planner 不需要过度关注细节
+- **Team Lead**：负责阶段推进和用户沟通，不自己执行任务（不读代码、不写代码），将任务委派给对应 agent
+- **Developer**：执行代码实现和修复，完成后等待审查，审查通过前不接新任务
+- **Reviewer**：基于 `git diff` 审查代码改动（不需要逐文件完整阅读），重点关注正确性、运行时状态转换、UI 交互逻辑
+- **Planner**：只负责复杂任务的规划和设计，简单任务由 lead 直接分配给 developer
+- **Manager**：只在阶段完成、审查通过、用户确认后执行 git commit
 
 ## 4. 创建任务
 

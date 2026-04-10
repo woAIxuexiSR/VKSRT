@@ -72,6 +72,15 @@ struct LightTriangle
 [[vk::binding(8)]]
 StructuredBuffer<LightTriangle> lights;
 
+[[vk::binding(9)]]
+RWTexture2D<float4> gbufferNormal;
+
+[[vk::binding(10)]]
+RWTexture2D<float4> gbufferPosition;
+
+[[vk::binding(11)]]
+RWTexture2D<float4> gbufferAlbedo;
+
 float3 getVertex(uint index)
 {
     return float3(vertexData[index * 3], vertexData[index * 3 + 1], vertexData[index * 3 + 2]);
@@ -141,9 +150,27 @@ void raygenMain()
 
         // Miss: terminate
         if (payload.isHit == 0)
+        {
+            if (depth == 0)
+            {
+                gbufferNormal[launchID] = float4(0.0);
+                gbufferPosition[launchID] = float4(0.0);
+                gbufferAlbedo[launchID] = float4(0.0);
+            }
             break;
+        }
 
         Material mat = materials[payload.matIndex];
+
+        // Write G-buffer on first hit (alpha=1 marks valid geometry)
+        if (depth == 0)
+        {
+            float3 N = normalize(payload.hitNormal);
+            if (dot(N, rayDir) > 0.0) N = -N;
+            gbufferNormal[launchID] = float4(N, 1.0);
+            gbufferPosition[launchID] = float4(payload.hitPos, 1.0);
+            gbufferAlbedo[launchID] = float4(mat.baseColor.rgb, 1.0);
+        }
 
         // Hit emissive surface: add emission with MIS weight
         if (mat.type == MAT_EMISSIVE)

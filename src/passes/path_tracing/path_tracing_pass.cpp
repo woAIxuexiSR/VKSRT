@@ -1,6 +1,7 @@
 #include "path_tracing_pass.h"
 
 #include "camera.h"
+#include "gbuffer.h"
 #include "imgui.h"
 
 REGISTER_RENDER_PASS_CPP(PathTracingPass, "path_tracing");
@@ -52,6 +53,10 @@ void PathTracingPass::init()
     };
     auto modelBindings = model.getDescriptorLayoutBindings();
     bindings.insert(bindings.end(), modelBindings.begin(), modelBindings.end());
+    // G-buffer: normal (binding 9), position (binding 10), albedo (binding 11)
+    bindings.push_back({VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR});
+    bindings.push_back({VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR});
+    bindings.push_back({VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR});
 
     rtPipeline = std::make_unique<RayTracingPipeline>(
         device, 1, bindings,
@@ -66,6 +71,10 @@ void PathTracingPass::init()
     };
     auto modelInfos = model.getDescriptorInfos();
     infos.insert(infos.end(), modelInfos.begin(), modelInfos.end());
+    // G-buffer descriptors (App-managed)
+    infos.push_back({VkDescriptorImageInfo{gbuffer->getNormalSampler(), gbuffer->getNormalImageView(), VK_IMAGE_LAYOUT_GENERAL}});
+    infos.push_back({VkDescriptorImageInfo{gbuffer->getPositionSampler(), gbuffer->getPositionImageView(), VK_IMAGE_LAYOUT_GENERAL}});
+    infos.push_back({VkDescriptorImageInfo{gbuffer->getAlbedoSampler(), gbuffer->getAlbedoImageView(), VK_IMAGE_LAYOUT_GENERAL}});
     rtPipeline->updateDescriptorSets(infos);
 }
 
@@ -131,12 +140,33 @@ PassImageSlot PathTracingPass::recordCommand(VkCommandBuffer commandBuffer,
                         srcAccess, VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
                         srcStage, VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, 1);
 
+    // Transition G-buffer images to GENERAL for RT write
+    // Non-first-frame: use GENERAL->GENERAL since bilateral may be disabled (no layout change)
+    VkImageLayout gbOldLayout = firstFrame ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_GENERAL;
+    VkAccessFlags2 gbSrcAccess = firstFrame ? (VkAccessFlags2)0 : (VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
+    VkPipelineStageFlags2 gbSrcStage = firstFrame ? VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT : (VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR);
+
+    device.imageBarrier(commandBuffer, gbuffer->getNormalImage(),
+                        gbOldLayout, VK_IMAGE_LAYOUT_GENERAL,
+                        gbSrcAccess, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+                        gbSrcStage, VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, 1);
+    device.imageBarrier(commandBuffer, gbuffer->getPositionImage(),
+                        gbOldLayout, VK_IMAGE_LAYOUT_GENERAL,
+                        gbSrcAccess, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+                        gbSrcStage, VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, 1);
+    device.imageBarrier(commandBuffer, gbuffer->getAlbedoImage(),
+                        gbOldLayout, VK_IMAGE_LAYOUT_GENERAL,
+                        gbSrcAccess, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+                        gbSrcStage, VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, 1);
+
     firstFrame = false;
 
     rtPipeline->bindPipeline(commandBuffer);
     rtPipeline->bindDescriptorSets(commandBuffer, currentFrame);
     rtPipeline->pushConstants(commandBuffer, &pushConstants);
     rtPipeline->traceRays(commandBuffer, {colorExtent.width, colorExtent.height, 1});
+
+    gbuffer->markWritten();
 
     return getOutputSlot();
 }

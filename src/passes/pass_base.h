@@ -16,6 +16,7 @@ using json = nlohmann::json;
 
 struct InputState; // forward declare
 class Camera;      // forward declare
+class GBuffer;     // forward declare
 
 // Image slot for inter-pass communication
 struct PassImageSlot
@@ -36,6 +37,7 @@ protected:
     SwapChain &swapChain;
     bool enabled = true;
     Camera *camera{nullptr};
+    GBuffer *gbuffer{nullptr};
 
     PassImageSlot initInputSlot;
 
@@ -56,6 +58,9 @@ public:
 
     // --- Camera ---
     void setCamera(Camera *cam) { camera = cam; }
+
+    // --- G-buffer ---
+    void setGBuffer(GBuffer *gb) { gbuffer = gb; }
 
     // --- Image slot wiring ---
     void setInputSlot(const PassImageSlot &slot) { initInputSlot = slot; }

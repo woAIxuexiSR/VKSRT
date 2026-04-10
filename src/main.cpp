@@ -11,6 +11,7 @@
 #include "imgui_renderer.h"
 #include "pass_base.h"
 #include "camera.h"
+#include "gbuffer.h"
 
 #include <chrono>
 #include <cstring>
@@ -33,6 +34,7 @@ public:
     std::vector<VkCommandBuffer> commandBuffers;
     std::vector<std::shared_ptr<PassBase>> passes;
     Camera camera;
+    std::unique_ptr<GBuffer> gbuffer;
     float lastTime{0.0f};
     uint32_t currentFrame{0};
     bool saveRequested{false};
@@ -78,11 +80,15 @@ public:
             passes.push_back(pass);
         }
 
-        // Phase 2: Wire input slots, inject camera, and init passes (chain order)
+        // Create G-buffer (App-managed, shared across passes)
+        gbuffer = std::make_unique<GBuffer>(device, swapChain->getExtent());
+
+        // Phase 2: Wire input slots, G-buffer, inject camera, and init passes (chain order)
         PassImageSlot prevSlot{};
         for (auto &pass : passes)
         {
             pass->setCamera(&camera);
+            pass->setGBuffer(gbuffer.get());
             pass->setInputSlot(prevSlot);
             pass->init();
             prevSlot = pass->getOutputSlot();
