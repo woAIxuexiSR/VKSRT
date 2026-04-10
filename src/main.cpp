@@ -216,6 +216,8 @@ private:
             saveRequested = false;
         }
 
+        camera.updatePrevMatrices();
+
         for (auto &pass : passes)
             if (pass->isEnabled())
                 pass->endFrame();

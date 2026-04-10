@@ -108,6 +108,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/src/passes/blit
     ${CMAKE_SOURCE_DIR}/src/passes/path_tracing
     ${CMAKE_SOURCE_DIR}/src/passes/bilateral
+    ${CMAKE_SOURCE_DIR}/src/passes/taa
 )
 include_directories(${Stb_INCLUDE_DIR})
 
@@ -135,6 +136,7 @@ file(GLOB PASSES_FILES
     "${CMAKE_SOURCE_DIR}/src/passes/blit/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/passes/path_tracing/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/passes/bilateral/*.cpp"
+    "${CMAKE_SOURCE_DIR}/src/passes/taa/*.cpp"
 )
 add_library(passes STATIC ${PASSES_FILES})
 target_link_libraries(passes PRIVATE

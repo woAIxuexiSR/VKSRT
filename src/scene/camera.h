@@ -22,14 +22,19 @@ public:
     static constexpr float moveSpeed = 3.0f;
     static constexpr float sensitivity = 0.1f;
 
+private:
+    glm::mat4 prevViewProj{1.0f};
+
 public:
     Camera(glm::vec3 _p, glm::vec3 _t, float _aspect, float _fov, float _n = 0.1f, float _f = 100.0f);
     ~Camera() {}
 
     void processInput(InputState &inputState, float deltaTime);
+    void updatePrevMatrices();
 
     glm::mat4 getViewMatrix() const;
     glm::mat4 getProjectionMatrix() const;
     glm::mat4 getInverseViewMatrix() const;
     glm::mat4 getInverseProjectionMatrix() const;
+    glm::mat4 getPrevViewProjectionMatrix() const { return prevViewProj; }
 };

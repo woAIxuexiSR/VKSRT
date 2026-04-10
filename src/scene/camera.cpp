@@ -65,3 +65,8 @@ glm::mat4 Camera::getInverseProjectionMatrix() const
 {
     return glm::inverse(getProjectionMatrix());
 }
+
+void Camera::updatePrevMatrices()
+{
+    prevViewProj = getProjectionMatrix() * getViewMatrix();
+}
