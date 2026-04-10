@@ -103,7 +103,6 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/src/gui
     ${CMAKE_SOURCE_DIR}/src/passes
     ${CMAKE_SOURCE_DIR}/src/passes/ray_tracing
-    ${CMAKE_SOURCE_DIR}/src/passes/accumulate
     ${CMAKE_SOURCE_DIR}/src/passes/tonemap
     ${CMAKE_SOURCE_DIR}/src/passes/blit
     ${CMAKE_SOURCE_DIR}/src/passes/path_tracing
@@ -131,7 +130,6 @@ target_link_libraries(core PRIVATE
 file(GLOB PASSES_FILES
     "${CMAKE_SOURCE_DIR}/src/passes/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/passes/ray_tracing/*.cpp"
-    "${CMAKE_SOURCE_DIR}/src/passes/accumulate/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/passes/tonemap/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/passes/blit/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/passes/path_tracing/*.cpp"

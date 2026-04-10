@@ -29,20 +29,27 @@ src/
 │   └── pipeline.h/cpp
 ├── passes/         # 渲染 Pass（每个 Pass 一个子文件夹，shader 放同目录）
 │   ├── pass_base.h/cpp   # PassBase 基类 + RenderPassFactory + REGISTER_PASS 宏
-│   ├── triangle/         # M2: 光栅化三角形
-│   │   ├── triangle_pass.h  (header-only)
-│   │   └── triangle.slang
-│   ├── ray_tracing/      # M3: 光追
-│   │   ├── ray_tracing_pass.h/cpp
-│   │   └── ray_tracing.slang   # 单文件 3 entry points (raygen/miss/closesthit)
+│   ├── path_tracing/     # Path Tracing（多次弹射、NEE、MIS、G-buffer 写入）
+│   │   ├── path_tracing_pass.h/cpp
+│   │   └── path_tracing.slang  # 单文件 3 entry points (raygen/miss/closesthit)
+│   ├── taa/              # TAA（内置 accumulate 模式，reprojection + neighborhood clamping）
+│   │   ├── taa_pass.h/cpp
+│   │   └── taa.slang
+│   ├── bilateral/        # 双边滤波降噪（基于 G-buffer 的边缘保持滤波）
+│   │   ├── bilateral_pass.h/cpp
+│   │   └── bilateral.slang
+│   ├── tonemap/          # ACES 色调映射
+│   │   ├── tonemap_pass.h/cpp
+│   │   └── tonemap.slang
 │   ├── blit/             # 全屏 blit，将 RT 结果绘制到 swapchain
 │   │   ├── blit_pass.h/cpp
 │   │   └── blit.slang
-│   └── tonemap/          # ACES 色调映射
-│       ├── tonemap_pass.h/cpp
-│       └── tonemap.slang
+│   └── ray_tracing/      # 可视化调试工具（Material/Position/Normal/UV 模式）
+│       ├── ray_tracing_pass.h/cpp
+│       └── ray_tracing.slang
 ├── scene/          # 场景管理
-│   ├── camera.h/cpp           # 从 EasyVulkan model/camera 移植
+│   ├── camera.h/cpp           # 从 EasyVulkan model/camera 移植，含 prevViewProj
+│   ├── gbuffer.h              # App 管理的 G-buffer（position/normal/albedo）
 │   └── ray_tracing_model.h   # RT 场景（加速结构 + 几何数据）
 ├── gui/            # ImGui 集成
 │   └── imgui_renderer.h/cpp  # 从 EasyVulkan 移植
@@ -84,7 +91,7 @@ passes 编译为独立静态库，链接到 main。
 - [x] Pass 架构重构（工厂模式 + PassImageSlot 链式传递）
 
 ### M4: Path Tracing Cornell Box [已完成]
-- [x] Accumulate Pass 解耦（独立帧累积 compute pass）
+- [x] Accumulate Pass 解耦（独立帧累积 compute pass，后合并进 TAA Pass）
 - [x] PassImageSlot 链式动态传递重构（disabled 零开销透传）
 - [x] 相机 UI 解耦（Application 管理，独立 ImGui section）
 - [x] 完整 Path Tracing（多次弹射、Russian Roulette、BRDF 采样）

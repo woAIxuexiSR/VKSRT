@@ -99,7 +99,7 @@ void PathTracingPass::drawUI()
 
 void PathTracingPass::update(uint32_t currentFrame, InputState &inputState)
 {
-    // Detect NEE/MIS parameter changes to trigger accumulate reset
+    // Detect NEE/MIS parameter changes to trigger reset
     static int lastNEE = pushConstants.useNEE;
     static int lastMIS = pushConstants.useMIS;
     static int lastMaxDepth = pushConstants.maxDepth;

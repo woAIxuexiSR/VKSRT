@@ -104,7 +104,7 @@ PassImageSlot TAAPass::recordCommand(VkCommandBuffer commandBuffer,
     if (!enabled)
         return inputSlot;
 
-    // Dynamic rebind if upstream pass changed (e.g. accumulate toggled)
+    // Dynamic rebind if upstream pass changed
     if (inputSlot.imageView != lastBoundInputView || inputSlot.sampler != lastBoundInputSampler)
     {
         vkDeviceWaitIdle(device.getDevice());
@@ -121,11 +121,11 @@ PassImageSlot TAAPass::recordCommand(VkCommandBuffer commandBuffer,
 
     auto extent = outputImage.getExtent();
 
-    // 1. Transition input (accumulate output): GENERAL -> SHADER_READ_ONLY
+    // 1. Transition input (path_tracing output): GENERAL -> SHADER_READ_ONLY
     device.imageBarrier(commandBuffer, inputSlot.image,
                         VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                         VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT,
-                        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, 1);
+                        VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, 1);
 
     // 2. Transition history buffer for reading
     VkImageLayout histOldLayout = firstFrame ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;

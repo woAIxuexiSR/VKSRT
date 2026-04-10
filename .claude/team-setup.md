@@ -50,17 +50,16 @@ Agent(name: "planner", model: "ppio/pa/claude-opus-4-6", team_name: "vksrt", des
 - **Planner**：只负责复杂任务的规划和设计，简单任务由 lead 直接分配给 developer
 - **Manager**：只在阶段完成、审查通过、用户确认后执行 git commit
 
-## 4. 创建任务
+## 4. 任务管理
 
-任务是会话级别的，每次新会话需要重新创建。
-M1-M3 已完成，M3.5（config/UI/模型导入/材质系统）已完成，当前任务：
+任务是会话级别的，每次新会话根据当前进度创建。
+
+**已完成**：M1-M4（基础搭建、光栅化、光追、Path Tracing）、M5（NEE+MIS、Bilateral Filter+G-buffer、TAA）
+
+**当前任务**：
 
 ```
-TaskCreate(subject: "将 accumulate pass 解耦", description: "将帧累积逻辑从 ray_tracing_pass 中解耦为独立的 accumulate pass，支持 progressive rendering。累积逻辑独立后可以复用于不同的渲染 pass。")
-TaskCreate(subject: "相机 UI 解耦", description: "将相机控制和相机 UI 从 ray_tracing_pass 中解耦出来，作为独立模块。相机信息在 ImGui 中独立显示，不绑定在某个具体 pass 的 UI 中。")
-TaskCreate(subject: "实现完整的 path tracing", description: "在 ray_tracing.slang 中实现完整的 path tracing：多次弹射、Russian Roulette、使用 BRDF 接口（eval/sample/pdf）进行材质采样、累积渲染，可以参考 easyvulkan 中的实现。配合解耦后的 accumulate pass 实现 progressive rendering。")
-
-TaskUpdate(taskId: "3", addBlockedBy: ["1", "2"])
+TaskCreate(subject: "加入 Pipeline Cache", description: "为 Vulkan Pipeline 加入 Pipeline Cache 机制，加速 pipeline 创建。参考 EasyVulkan (D:\\works\\Vscode\\EasyVulkan) 中的实现。")
+TaskCreate(subject: "Light Tracing", description: "实现 Light Tracing：从光源发射光线进行积分，反向的 path tracing。作为新的渲染 pass。")
+TaskCreate(subject: "Wavefront Path Tracing", description: "实现 Wavefront Path Tracing：阶段式的 path tracing，集体发射光线、eval 材质等，减少 GPU 的 thread divergence。作为新的渲染 pass。")
 ```
-
-根据实际进度调整任务内容。
