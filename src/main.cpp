@@ -10,6 +10,9 @@
 #include "pipeline.h"
 #include "imgui_renderer.h"
 #include "pass_base.h"
+#include "camera.h"
+
+#include <chrono>
 
 static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 static constexpr int WIDTH = 1600, HEIGHT = 1200;
@@ -26,10 +29,14 @@ public:
     std::vector<VkCommandBuffer> commandBuffers;
     std::vector<std::shared_ptr<PassBase>> passes;
     std::unordered_map<std::string, std::shared_ptr<PassBase>> passMap;
+    Camera camera;
+    float lastTime{0.0f};
     uint32_t currentFrame{0};
 
 public:
     Application(const std::string &configPath)
+        : camera({0.5f, -2.0f, 0.5f}, {0.5f, 0.0f, 0.5f},
+                 (float)WIDTH / HEIGHT, 45.0f, 0.1f, 100.0f)
     {
         commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 
@@ -72,10 +79,11 @@ public:
             passMap[name] = pass;
         }
 
-        // Phase 2: Wire input slots and init passes (chain order)
+        // Phase 2: Wire input slots, inject camera, and init passes (chain order)
         PassImageSlot prevSlot{};
         for (auto &pass : passes)
         {
+            pass->setCamera(&camera);
             pass->setInputSlot(prevSlot);
             pass->init();
             prevSlot = pass->getOutputSlot();
@@ -120,6 +128,13 @@ private:
 
         auto &inputState = window.getInputState();
 
+        // Update camera
+        auto now = std::chrono::high_resolution_clock::now();
+        static auto startTime = now;
+        float time = std::chrono::duration<float>(now - startTime).count();
+        camera.processInput(inputState, time - lastTime);
+        lastTime = time;
+
         // Update all passes (always called, even when disabled, for state tracking)
         for (auto &pass : passes)
             pass->update(currentFrame, inputState);
@@ -133,6 +148,13 @@ private:
         ImGui::SetNextWindowSize(ImVec2(450, 450), ImGuiCond_Once);
         ImGui::Begin("VKSRT");
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+        ImGui::Separator();
+        if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            ImGui::Text("Pos: (%.2f, %.2f, %.2f)", camera.pos.x, camera.pos.y, camera.pos.z);
+            ImGui::Text("Yaw: %.1f  Pitch: %.1f", camera.yaw, camera.pitch);
+            ImGui::Text("FOV: %.1f", camera.fov);
+        }
         ImGui::Separator();
         for (auto &pass : passes)
         {

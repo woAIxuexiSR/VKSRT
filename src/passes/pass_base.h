@@ -15,6 +15,7 @@
 using json = nlohmann::json;
 
 struct InputState; // forward declare
+class Camera;      // forward declare
 
 // Image slot for inter-pass communication
 struct PassImageSlot
@@ -34,6 +35,7 @@ protected:
     Device &device;
     SwapChain &swapChain;
     bool enabled = true;
+    Camera *camera{nullptr};
 
     PassImageSlot initInputSlot;
 
@@ -52,12 +54,16 @@ public:
     bool isEnabled() const { return enabled; }
     virtual bool canDisable() const { return true; }
 
+    // --- Camera ---
+    void setCamera(Camera *cam) { camera = cam; }
+
     // --- Image slot wiring ---
     void setInputSlot(const PassImageSlot &slot) { initInputSlot = slot; }
     virtual PassImageSlot getOutputSlot() const { return initInputSlot; }
 
     // --- Lifecycle ---
     virtual void init() {}
+    // Called every frame even when disabled; each pass handles enabled state internally.
     virtual void update(uint32_t currentFrame, InputState &inputState) {}
     virtual PassImageSlot recordCommand(VkCommandBuffer commandBuffer,
                                         const PassImageSlot &inputSlot,

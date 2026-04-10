@@ -5,7 +5,6 @@
 #include "resource.h"
 #include "ray_tracing_model.h"
 #include "scene_loader.h"
-#include "camera.h"
 
 #include <memory>
 
@@ -27,8 +26,6 @@ private:
     UniformBufferResource uniformBuffer;
 
     RayTracingModel model;
-    Camera camera;
-    float lastTime{0.0f};
     bool firstFrame{true};
 
 public:
@@ -39,7 +36,6 @@ public:
     PassImageSlot getOutputSlot() const override;
 
     void init() override;
-    void drawUI() override;
     void update(uint32_t currentFrame, InputState &inputState) override;
     PassImageSlot recordCommand(VkCommandBuffer commandBuffer,
                                 const PassImageSlot &inputSlot,

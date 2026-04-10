@@ -1,7 +1,6 @@
 #include "ray_tracing_pass.h"
 
-#include <chrono>
-#include "imgui.h"
+#include "camera.h"
 
 REGISTER_RENDER_PASS_CPP(RayTracingPass, "ray_tracing");
 
@@ -10,9 +9,7 @@ RayTracingPass::RayTracingPass(Device &_d, SwapChain &_sc, const json &params)
       colorImage{_d, VK_FORMAT_R32G32B32A32_SFLOAT, _sc.getExtent(),
                  VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT},
       uniformBuffer{_d, sizeof(RTUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT},
-      model{_d},
-      camera{{0.5f, -2.0f, 0.5f}, {0.5f, 0.0f, 0.5f},
-             _sc.getExtent().width / (float)_sc.getExtent().height, 45.0f, 0.1f, 100.0f}
+      model{_d}
 {
     // Load scene from params
     if (params.contains("scene"))
@@ -63,24 +60,10 @@ void RayTracingPass::init()
     rtPipeline->updateDescriptorSets(infos);
 }
 
-void RayTracingPass::drawUI()
-{
-    ImGui::Text("Camera Pos: (%.2f, %.2f, %.2f)", camera.pos.x, camera.pos.y, camera.pos.z);
-    ImGui::Text("Yaw: %.1f  Pitch: %.1f", camera.yaw, camera.pitch);
-    ImGui::Text("FOV: %.1f", camera.fov);
-}
-
 void RayTracingPass::update(uint32_t currentFrame, InputState &inputState)
 {
-    static auto startTime = std::chrono::high_resolution_clock::now();
-    auto currentTime = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-
-    camera.processInput(inputState, time - lastTime);
-    lastTime = time;
-
-    ubo.viewInverse = camera.getInverseViewMatrix();
-    ubo.projInverse = camera.getInverseProjectionMatrix();
+    ubo.viewInverse = camera->getInverseViewMatrix();
+    ubo.projInverse = camera->getInverseProjectionMatrix();
 
     uniformBuffer.update(&ubo);
 }
