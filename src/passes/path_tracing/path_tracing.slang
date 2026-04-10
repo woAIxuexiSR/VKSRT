@@ -4,6 +4,7 @@
 import material;
 import brdf;
 import onb;
+import rng;
 
 // --- Payload: closesthit returns geometry info, raygen does shading ---
 
@@ -75,29 +76,6 @@ struct HitGroupSBT
 
 [[vk::shader_record]]
 ConstantBuffer<HitGroupSBT> sbt;
-
-// --- RNG: Wang hash ---
-
-uint wangHash(uint seed)
-{
-    seed = (seed ^ 61u) ^ (seed >> 16u);
-    seed *= 9u;
-    seed = seed ^ (seed >> 4u);
-    seed *= 0x27d4eb2du;
-    seed = seed ^ (seed >> 15u);
-    return seed;
-}
-
-float randFloat(inout uint seed)
-{
-    seed = wangHash(seed);
-    return float(seed) / 4294967296.0;
-}
-
-float2 randFloat2(inout uint seed)
-{
-    return float2(randFloat(seed), randFloat(seed));
-}
 
 // --- Ray Generation: iterative path tracing ---
 

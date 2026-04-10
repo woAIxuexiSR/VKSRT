@@ -4,6 +4,7 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
+#include <cmath>
 #include <iostream>
 #include <stdexcept>
 
@@ -92,6 +93,39 @@ static void addQuad(RayTracingModel &model,
     model.insertMesh(verts, indices, mat, norms, uvs);
 }
 
+// Helper: add a box from 6 quads given 8 corner vertices (axis-aligned before rotation)
+// Vertices are specified as: bottom face (b0-b3), top face (t0-t3), wound CCW from outside
+static void addBox(RayTracingModel &model,
+                   glm::vec3 b0, glm::vec3 b1, glm::vec3 b2, glm::vec3 b3,
+                   glm::vec3 t0, glm::vec3 t1, glm::vec3 t2, glm::vec3 t3,
+                   const Material &mat)
+{
+    // Bottom (normal pointing down)
+    addQuad(model, b0, b3, b2, b1, mat);
+    // Top (normal pointing up)
+    addQuad(model, t0, t1, t2, t3, mat);
+    // Front
+    addQuad(model, b0, b1, t1, t0, mat);
+    // Right
+    addQuad(model, b1, b2, t2, t1, mat);
+    // Back
+    addQuad(model, b2, b3, t3, t2, mat);
+    // Left
+    addQuad(model, b3, b0, t0, t3, mat);
+}
+
+// Rotate a point around the Z axis by angle (radians) relative to a center
+static glm::vec3 rotateZ(glm::vec3 p, glm::vec3 center, float angle)
+{
+    float c = std::cos(angle);
+    float s = std::sin(angle);
+    float dx = p.x - center.x;
+    float dy = p.y - center.y;
+    return {center.x + dx * c - dy * s,
+            center.y + dx * s + dy * c,
+            p.z};
+}
+
 void SceneLoader::buildCornellBox(RayTracingModel &model)
 {
     Material white{};
@@ -105,6 +139,18 @@ void SceneLoader::buildCornellBox(RayTracingModel &model)
     Material green{};
     green.baseColor = {0.12f, 0.45f, 0.15f, 1.0f};
     green.roughness = 1.0f;
+
+    Material mirror{};
+    mirror.baseColor = {0.95f, 0.95f, 0.95f, 1.0f};
+    mirror.roughness = 0.0f;
+    mirror.metallic = 1.0f;
+    mirror.type = MAT_METAL;
+
+    Material glass{};
+    glass.baseColor = {1.0f, 1.0f, 1.0f, 1.0f};
+    glass.roughness = 0.0f;
+    glass.ior = 1.5f;
+    glass.type = MAT_DIELECTRIC;
 
     Material light{};
     light.baseColor = {1.0f, 1.0f, 1.0f, 1.0f};
@@ -124,11 +170,53 @@ void SceneLoader::buildCornellBox(RayTracingModel &model)
     // Left wall - red (x=0), normal +X
     addQuad(model,
             {0, 0, 0}, {0, 1, 0}, {0, 1, 1}, {0, 0, 1}, red);
-    // Right wall - green (x=1), normal -X
+    // Right wall - metal mirror (x=1), normal -X
     addQuad(model,
-            {1, 1, 0}, {1, 0, 0}, {1, 0, 1}, {1, 1, 1}, green);
+            {1, 1, 0}, {1, 0, 0}, {1, 0, 1}, {1, 1, 1}, mirror);
     // Light (ceiling, slightly inset), normal -Z
     addQuad(model,
             {0.35f, 0.35f, 0.999f}, {0.35f, 0.65f, 0.999f},
             {0.65f, 0.65f, 0.999f}, {0.65f, 0.35f, 0.999f}, light);
+
+    // --- Tall box (right-back): white lambertian ---
+    // Classic Cornell Box tall box: ~0.3 wide, ~0.6 tall, rotated ~15 deg
+    {
+        float bx = 0.62f, by = 0.55f; // center
+        float hw = 0.15f;              // half-width
+        float h = 0.6f;
+        float angle = glm::radians(15.0f);
+        glm::vec3 center = {bx, by, 0};
+
+        glm::vec3 b0 = rotateZ({bx - hw, by - hw, 0}, center, angle);
+        glm::vec3 b1 = rotateZ({bx + hw, by - hw, 0}, center, angle);
+        glm::vec3 b2 = rotateZ({bx + hw, by + hw, 0}, center, angle);
+        glm::vec3 b3 = rotateZ({bx - hw, by + hw, 0}, center, angle);
+        glm::vec3 t0 = b0; t0.z = h;
+        glm::vec3 t1 = b1; t1.z = h;
+        glm::vec3 t2 = b2; t2.z = h;
+        glm::vec3 t3 = b3; t3.z = h;
+
+        addBox(model, b0, b1, b2, b3, t0, t1, t2, t3, white);
+    }
+
+    // --- Short box (left-front): dielectric glass ---
+    // Classic Cornell Box short box: ~0.3 wide, ~0.3 tall, rotated ~-18 deg
+    {
+        float bx = 0.35f, by = 0.3f; // center
+        float hw = 0.15f;             // half-width
+        float h = 0.3f;
+        float angle = glm::radians(-18.0f);
+        glm::vec3 center = {bx, by, 0};
+
+        glm::vec3 b0 = rotateZ({bx - hw, by - hw, 0}, center, angle);
+        glm::vec3 b1 = rotateZ({bx + hw, by - hw, 0}, center, angle);
+        glm::vec3 b2 = rotateZ({bx + hw, by + hw, 0}, center, angle);
+        glm::vec3 b3 = rotateZ({bx - hw, by + hw, 0}, center, angle);
+        glm::vec3 t0 = b0; t0.z = h;
+        glm::vec3 t1 = b1; t1.z = h;
+        glm::vec3 t2 = b2; t2.z = h;
+        glm::vec3 t3 = b3; t3.z = h;
+
+        addBox(model, b0, b1, b2, b3, t0, t1, t2, t3, glass);
+    }
 }

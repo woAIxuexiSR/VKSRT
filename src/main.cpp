@@ -13,6 +13,10 @@
 #include "camera.h"
 
 #include <chrono>
+#include <cstring>
+#include <algorithm>
+
+#include "stb_image_write.h"
 
 static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 static constexpr int WIDTH = 1600, HEIGHT = 1200;
@@ -31,6 +35,8 @@ public:
     Camera camera;
     float lastTime{0.0f};
     uint32_t currentFrame{0};
+    bool saveRequested{false};
+    char saveFilename[128] = "screenshot";
 
 public:
     Application(const std::string &configPath)
@@ -141,6 +147,12 @@ private:
         ImGui::SetNextWindowSize(ImVec2(450, 450), ImGuiCond_Once);
         ImGui::Begin("VKSRT");
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+        if (ImGui::Button("Save Image"))
+            saveRequested = true;
+        ImGui::SameLine();
+        ImGui::PushItemWidth(150);
+        ImGui::InputText("##filename", saveFilename, sizeof(saveFilename));
+        ImGui::PopItemWidth();
         ImGui::Separator();
         if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
         {
@@ -192,12 +204,67 @@ private:
         else if (result != VK_SUCCESS)
             throw std::runtime_error("failed to present swap chain image!");
 
+        if (saveRequested && result == VK_SUCCESS)
+        {
+            saveImage(imageIndex);
+            saveRequested = false;
+        }
+
         for (auto &pass : passes)
             if (pass->isEnabled())
                 pass->endFrame();
 
         window.resetInputState();
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+    }
+
+    void saveImage(uint32_t imageIndex)
+    {
+        vkDeviceWaitIdle(device.getDevice());
+
+        auto extent = swapChain->getExtent();
+        uint32_t width = extent.width;
+        uint32_t height = extent.height;
+        uint32_t bytesPerPixel = 4;
+        VkDeviceSize imageSize = width * height * bytesPerPixel;
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+        device.createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                            stagingBuffer, stagingBufferMemory);
+
+        VkCommandBuffer cmd = device.beginSingleTimeCommands();
+
+        device.imageBarrier(cmd, swapChain->getImage(imageIndex),
+                            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                            0, VK_ACCESS_2_TRANSFER_READ_BIT,
+                            VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, 1);
+
+        device.copyImageToBuffer(cmd, swapChain->getImage(imageIndex), stagingBuffer, width, height, bytesPerPixel);
+
+        device.endSingleTimeCommands(cmd);
+
+        void *mapped;
+        std::vector<uint8_t> pixels(imageSize);
+        vkMapMemory(device.getDevice(), stagingBufferMemory, 0, imageSize, 0, &mapped);
+        memcpy(pixels.data(), mapped, static_cast<size_t>(imageSize));
+        vkUnmapMemory(device.getDevice(), stagingBufferMemory);
+
+        // Swapchain is B8G8R8A8: swap B and R channels
+        VkFormat format = swapChain->getImageFormat();
+        if (format == VK_FORMAT_B8G8R8A8_SRGB || format == VK_FORMAT_B8G8R8A8_UNORM)
+        {
+            for (uint32_t i = 0; i < width * height; i++)
+                std::swap(pixels[i * 4 + 0], pixels[i * 4 + 2]);
+        }
+
+        std::string filename = std::string(saveFilename) + ".png";
+        stbi_write_png(filename.c_str(), width, height, bytesPerPixel, pixels.data(), bytesPerPixel * width);
+        std::cout << "Saved: " << filename << std::endl;
+
+        vkDestroyBuffer(device.getDevice(), stagingBuffer, nullptr);
+        vkFreeMemory(device.getDevice(), stagingBufferMemory, nullptr);
     }
 };
 

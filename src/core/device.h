@@ -121,6 +121,7 @@ public:
     VkImageView createImageView(VkImage image, VkImageViewType viewType, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels, uint32_t layerCount = 1);
     VkSampler createSampler(VkFilter filter, VkSamplerAddressMode addressMode, VkBool32 compareEnable = VK_FALSE, VkCompareOp compareOp = VK_COMPARE_OP_NEVER);
 
+    void copyImageToBuffer(VkCommandBuffer commandBuffer, VkImage image, VkBuffer buffer, uint32_t width, uint32_t height, uint32_t bytesPerPixel);
     void imageBarrier(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout,
                       VkAccessFlags2 srcAccessMask, VkAccessFlags2 dstAccessMask,
                       VkPipelineStageFlags2 sourceStage, VkPipelineStageFlags2 destinationStage,

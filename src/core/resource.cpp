@@ -1,5 +1,8 @@
 #include "resource.h"
 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
 ImageResource::ImageResource(Device &_d, VkFormat _f, VkExtent2D _e, VkImageUsageFlags usage,
                              VkImageAspectFlags _aspectMask, VkBool32 compareEnable, VkCompareOp compareOp)
     : device(_d), format(_f), extent(_e), aspectMask(_aspectMask)
