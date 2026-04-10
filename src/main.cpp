@@ -28,7 +28,6 @@ public:
 
     std::vector<VkCommandBuffer> commandBuffers;
     std::vector<std::shared_ptr<PassBase>> passes;
-    std::unordered_map<std::string, std::shared_ptr<PassBase>> passMap;
     Camera camera;
     float lastTime{0.0f};
     uint32_t currentFrame{0};
@@ -62,21 +61,15 @@ public:
         json config = json::parse(file);
 
         passes.clear();
-        passMap.clear();
 
         // Phase 1: Create all passes
         for (auto &passConfig : config["passes"])
         {
             std::string type = passConfig.at("type");
-            std::string name = passConfig.value("name", type);
             json params = passConfig.value("params", json::object());
-
-            if (passMap.count(name))
-                throw std::runtime_error("duplicate pass name: '" + name + "'");
 
             auto pass = RenderPassFactory::createPass(type, device, *swapChain, params);
             passes.push_back(pass);
-            passMap[name] = pass;
         }
 
         // Phase 2: Wire input slots, inject camera, and init passes (chain order)

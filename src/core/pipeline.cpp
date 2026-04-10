@@ -405,6 +405,16 @@ void RayTracingPipeline::createPipeline()
     pipelineLayoutInfo.setLayoutCount = 1;
     pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
 
+    VkPushConstantRange pushRange{};
+    if (pushConstantSize > 0)
+    {
+        pushRange.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR;
+        pushRange.offset = 0;
+        pushRange.size = pushConstantSize;
+        pipelineLayoutInfo.pushConstantRangeCount = 1;
+        pipelineLayoutInfo.pPushConstantRanges = &pushRange;
+    }
+
     if (vkCreatePipelineLayout(device.getDevice(), &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
         throw std::runtime_error("failed to create pipeline layout!");
 
@@ -501,6 +511,13 @@ void RayTracingPipeline::createSBTs(const std::vector<HitSBTRecord> &hitRecords)
     hitRegion.deviceAddress = getBufferDeviceAddress(hitSBT->getBuffer());
 
     callRegion = {};
+}
+
+void RayTracingPipeline::pushConstants(VkCommandBuffer commandBuffer, void *data)
+{
+    vkCmdPushConstants(commandBuffer, pipelineLayout,
+                       VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR,
+                       0, pushConstantSize, data);
 }
 
 void RayTracingPipeline::traceRays(VkCommandBuffer commandBuffer, VkExtent3D extent)

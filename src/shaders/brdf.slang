@@ -14,6 +14,7 @@ public struct BRDFSample
     public float3 value;   // BRDF value f(wi, wo)
     public float  pdf;     // probability density
     public bool   valid;   // false if sampling failed
+    public bool   isDelta; // true for delta distributions (Metal, Dielectric)
 };
 
 // --- BRDF evaluation: f(wi, wo) ---
@@ -39,6 +40,7 @@ public BRDFSample brdfSample(float3 wo, Material mat, float2 rng)
 {
     BRDFSample s;
     s.valid = true;
+    s.isDelta = false;
     s.wi = float3(0.0);
     s.value = float3(0.0);
     s.pdf = 1.0;
@@ -51,6 +53,7 @@ public BRDFSample brdfSample(float3 wo, Material mat, float2 rng)
         s.wi = localDir;
         s.pdf = localDir.z / PI;
         s.value = mat.baseColor.rgb / PI;
+        s.isDelta = false;
         break;
     }
     case MAT_METAL:
@@ -64,6 +67,7 @@ public BRDFSample brdfSample(float3 wo, Material mat, float2 rng)
         s.wi = reflected;
         s.pdf = 1.0;
         s.value = mat.baseColor.rgb;
+        s.isDelta = true;
         if (s.wi.z <= 0.0) s.valid = false;
         break;
     }
@@ -85,6 +89,7 @@ public BRDFSample brdfSample(float3 wo, Material mat, float2 rng)
         }
         s.pdf = 1.0;
         s.value = float3(1.0);
+        s.isDelta = true;
         break;
     }
     case MAT_EMISSIVE:

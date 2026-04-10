@@ -1,8 +1,7 @@
 {
   "passes": [
     {
-      "type": "ray_tracing",
-      "name": "rt",
+      "type": "path_tracing",
       "params": {
         "scene": {
           "type": "cornell_box"
@@ -10,16 +9,13 @@
       }
     },
     {
-      "type": "accumulate",
-      "name": "accumulate"
+      "type": "accumulate"
     },
     {
-      "type": "tonemap",
-      "name": "tonemap"
+      "type": "tonemap"
     },
     {
-      "type": "blit",
-      "name": "blit"
+      "type": "blit"
     }
   ]
 }

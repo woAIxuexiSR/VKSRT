@@ -42,28 +42,37 @@ endif()
 set(SLANG_SHARED_DIR "${CMAKE_SOURCE_DIR}/src/shaders")
 file(GLOB SLANG_SHARED_MODULES "${SLANG_SHARED_DIR}/*.slang")
 
-# RT slang shader: single file with all entry points compiled to one SPV
-set(RT_SLANG "${CMAKE_SOURCE_DIR}/src/passes/ray_tracing/ray_tracing.slang")
-set(RT_SLANG_DIR "${CMAKE_SOURCE_DIR}/src/passes/ray_tracing")
-set(RT_OUT_DIR "${CMAKE_BINARY_DIR}/shaders/ray_tracing")
-set(RT_SPV "${RT_OUT_DIR}/ray_tracing.spv")
-
-add_custom_command(
-    OUTPUT ${RT_SPV}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${RT_OUT_DIR}"
-    COMMAND ${SLANGC_EXECUTABLE} ${RT_SLANG} -I${RT_SLANG_DIR} -I${SLANG_SHARED_DIR} -target spirv -entry raygenMain -entry missMain -entry closestHitMain -o ${RT_SPV}
-    DEPENDS ${RT_SLANG} ${SLANG_SHARED_MODULES}
-    COMMENT "Compiling ray_tracing.slang (all entries) to single SPIR-V"
+# RT slang shaders: multi-entry point files compiled to single SPV each
+set(RT_MULTI_ENTRY_SHADERS
+    "ray_tracing/ray_tracing"
+    "path_tracing/path_tracing"
 )
-list(APPEND SPIRV_BINARY_FILES ${RT_SPV})
+
+foreach(RT_SHADER ${RT_MULTI_ENTRY_SHADERS})
+    get_filename_component(RT_NAME ${RT_SHADER} NAME)
+    get_filename_component(RT_DIR_NAME ${RT_SHADER} DIRECTORY)
+    set(RT_SLANG "${CMAKE_SOURCE_DIR}/src/passes/${RT_SHADER}.slang")
+    set(RT_SLANG_DIR "${CMAKE_SOURCE_DIR}/src/passes/${RT_DIR_NAME}")
+    set(RT_OUT_DIR "${CMAKE_BINARY_DIR}/shaders/${RT_DIR_NAME}")
+    set(RT_SPV "${RT_OUT_DIR}/${RT_NAME}.spv")
+
+    add_custom_command(
+        OUTPUT ${RT_SPV}
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${RT_OUT_DIR}"
+        COMMAND ${SLANGC_EXECUTABLE} ${RT_SLANG} -I${RT_SLANG_DIR} -I${SLANG_SHARED_DIR} -target spirv -entry raygenMain -entry missMain -entry closestHitMain -o ${RT_SPV}
+        DEPENDS ${RT_SLANG} ${SLANG_SHARED_MODULES}
+        COMMENT "Compiling ${RT_NAME}.slang (all entries) to single SPIR-V"
+    )
+    list(APPEND SPIRV_BINARY_FILES ${RT_SPV})
+endforeach()
 
 # compile other slang shaders (single entry point each)
 file(GLOB_RECURSE SLANG_FILES "src/passes/**/*.slang")
 
 foreach(SLANG ${SLANG_FILES})
-    # Skip RT slang file (handled above with multi-entry compilation)
+    # Skip multi-entry RT slang files (handled above)
     get_filename_component(SLANG_NAME ${SLANG} NAME)
-    if(SLANG_NAME STREQUAL "ray_tracing.slang")
+    if(SLANG_NAME STREQUAL "ray_tracing.slang" OR SLANG_NAME STREQUAL "path_tracing.slang")
         continue()
     endif()
     get_filename_component(FILE_NAME ${SLANG} NAME)
@@ -97,6 +106,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/src/passes/accumulate
     ${CMAKE_SOURCE_DIR}/src/passes/tonemap
     ${CMAKE_SOURCE_DIR}/src/passes/blit
+    ${CMAKE_SOURCE_DIR}/src/passes/path_tracing
 )
 include_directories(${Stb_INCLUDE_DIR})
 
@@ -122,6 +132,7 @@ file(GLOB PASSES_FILES
     "${CMAKE_SOURCE_DIR}/src/passes/accumulate/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/passes/tonemap/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/passes/blit/*.cpp"
+    "${CMAKE_SOURCE_DIR}/src/passes/path_tracing/*.cpp"
 )
 add_library(passes STATIC ${PASSES_FILES})
 target_link_libraries(passes PRIVATE

@@ -8,36 +8,38 @@
 
 #include <memory>
 
-struct RTUniform
+struct PTUniform
 {
     alignas(16) glm::mat4 viewInverse;
     alignas(16) glm::mat4 projInverse;
 };
 
-struct RTPushConstants
+struct PTPushConstants
 {
-    int shadingMode{0}; // 0=Material, 1=Position, 2=Normal, 3=UV
+    int frameIndex{0};
+    int maxDepth{8};
+    int rrDepth{3};
 };
 
-class RayTracingPass : public PassBase
+class PathTracingPass : public PassBase
 {
-    REGISTER_RENDER_PASS(RayTracingPass);
+    REGISTER_RENDER_PASS(PathTracingPass);
 
 private:
     std::unique_ptr<RayTracingPipeline> rtPipeline;
 
     ImageResource colorImage;
-    RTUniform ubo;
+    PTUniform ubo;
     UniformBufferResource uniformBuffer;
-    RTPushConstants pushConstants;
+    PTPushConstants pushConstants;
 
     RayTracingModel model;
     bool firstFrame{true};
 
 public:
-    RayTracingPass(Device &_d, SwapChain &_sc, const json &params);
+    PathTracingPass(Device &_d, SwapChain &_sc, const json &params);
 
-    std::string getName() const override { return "RayTracing"; }
+    std::string getName() const override { return "PathTracing"; }
     bool canDisable() const override { return false; }
     PassImageSlot getOutputSlot() const override;
 

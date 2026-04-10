@@ -1,5 +1,5 @@
-// Ray tracing shaders: raygen, miss, closest hit
-// Compiled as single file with multiple entry points via slangc
+// Ray tracing shaders: visualization/debug tool
+// Modes: 0=Material, 1=Position, 2=Normal, 3=UV
 
 import material;
 import brdf;
@@ -9,7 +9,10 @@ import onb;
 struct RayPayload
 {
     int isHit : read(caller) : write(caller, closesthit, miss);
-    float3 color : read(caller) : write(caller, closesthit, miss);
+    float3 hitPos : read(caller) : write(caller, closesthit, miss);
+    float3 hitNormal : read(caller) : write(caller, closesthit, miss);
+    float2 hitUV : read(caller) : write(caller, closesthit, miss);
+    int matIndex : read(caller) : write(caller, closesthit, miss);
 };
 
 struct CameraProperties
@@ -17,6 +20,14 @@ struct CameraProperties
     float4x4 viewInverse;
     float4x4 projInverse;
 };
+
+struct PushConstants
+{
+    int shadingMode;
+};
+
+[[vk::push_constant]]
+PushConstants pc;
 
 [[vk::binding(0)]]
 RWTexture2D<float4> image;
@@ -28,7 +39,7 @@ ConstantBuffer<CameraProperties> cam;
 RaytracingAccelerationStructure topLevelAS;
 
 [[vk::binding(3)]]
-StructuredBuffer<float3> vertices;
+StructuredBuffer<float> vertexData;
 
 [[vk::binding(4)]]
 StructuredBuffer<uint> indices;
@@ -37,10 +48,20 @@ StructuredBuffer<uint> indices;
 StructuredBuffer<Material> materials;
 
 [[vk::binding(6)]]
-StructuredBuffer<float3> normals;
+StructuredBuffer<float> normalData;
 
 [[vk::binding(7)]]
 StructuredBuffer<float2> texcoords;
+
+float3 getVertex(uint index)
+{
+    return float3(vertexData[index * 3], vertexData[index * 3 + 1], vertexData[index * 3 + 2]);
+}
+
+float3 getNormal(uint index)
+{
+    return float3(normalData[index * 3], normalData[index * 3 + 1], normalData[index * 3 + 2]);
+}
 
 struct HitGroupSBT
 {
@@ -76,11 +97,52 @@ void raygenMain()
 
     RayPayload payload;
     payload.isHit = 0;
-    payload.color = float3(0.0, 0.0, 0.0);
+    payload.hitPos = float3(0.0);
+    payload.hitNormal = float3(0.0);
+    payload.hitUV = float2(0.0);
+    payload.matIndex = -1;
 
     TraceRay(topLevelAS, RAY_FLAG_FORCE_OPAQUE, 0xff, 0, 0, 0, ray, payload);
 
-    image[launchID] = float4(payload.color, 1.0);
+    float3 color = float3(0.2, 0.2, 0.2); // miss background
+
+    if (payload.isHit != 0)
+    {
+        if (pc.shadingMode == 0)
+        {
+            // Material shading: simple directional light
+            Material mat = materials[payload.matIndex];
+            float3 N = payload.hitNormal;
+
+            if (mat.type == MAT_EMISSIVE)
+            {
+                color = mat.emission.rgb * mat.emission.a;
+            }
+            else
+            {
+                float3 lightDir = normalize(float3(0.5, 1.0, -0.3));
+                float NdotL = max(dot(N, lightDir), 0.0);
+                color = mat.baseColor.rgb * (0.15 + 0.85 * NdotL);
+            }
+        }
+        else if (pc.shadingMode == 1)
+        {
+            // Position visualization
+            color = fract(payload.hitPos + 0.001);
+        }
+        else if (pc.shadingMode == 2)
+        {
+            // Normal visualization
+            color = payload.hitNormal * 0.5 + 0.5;
+        }
+        else if (pc.shadingMode == 3)
+        {
+            // UV visualization
+            color = float3(payload.hitUV, 0.0);
+        }
+    }
+
+    image[launchID] = float4(color, 1.0);
 }
 
 // --- Miss ---
@@ -89,7 +151,6 @@ void raygenMain()
 void missMain(inout RayPayload payload)
 {
     payload.isHit = 0;
-    payload.color = float3(0.2, 0.2, 0.2);
 }
 
 // --- Closest Hit ---
@@ -97,9 +158,6 @@ void missMain(inout RayPayload payload)
 [shader("closesthit")]
 void closestHitMain(inout RayPayload payload, BuiltInTriangleIntersectionAttributes attribs)
 {
-    Material mat = materials[sbt.matIndex];
-
-    // Interpolate normal using barycentric coordinates
     float3 bary = float3(1.0 - attribs.barycentrics.x - attribs.barycentrics.y,
                          attribs.barycentrics.x, attribs.barycentrics.y);
 
@@ -108,50 +166,31 @@ void closestHitMain(inout RayPayload payload, BuiltInTriangleIntersectionAttribu
     uint i1 = indices[(sbt.indexOffset + triIdx) * 3 + 1];
     uint i2 = indices[(sbt.indexOffset + triIdx) * 3 + 2];
 
-    float3 n0 = normals[i0 + sbt.vertexOffset];
-    float3 n1 = normals[i1 + sbt.vertexOffset];
-    float3 n2 = normals[i2 + sbt.vertexOffset];
+    // Interpolate position
+    float3 v0 = getVertex(i0 + sbt.vertexOffset);
+    float3 v1 = getVertex(i1 + sbt.vertexOffset);
+    float3 v2 = getVertex(i2 + sbt.vertexOffset);
+    float3 hitPos = bary.x * v0 + bary.y * v1 + bary.z * v2;
+
+    // Interpolate normal
+    float3 n0 = getNormal(i0 + sbt.vertexOffset);
+    float3 n1 = getNormal(i1 + sbt.vertexOffset);
+    float3 n2 = getNormal(i2 + sbt.vertexOffset);
     float3 N = normalize(bary.x * n0 + bary.y * n1 + bary.z * n2);
 
-    // Emissive materials emit directly
-    if (mat.type == MAT_EMISSIVE)
-    {
-        payload.isHit = 1;
-        payload.color = mat.emission.rgb * mat.emission.a;
-        return;
-    }
+    // Ensure normal faces against the ray
+    if (dot(N, WorldRayDirection()) > 0.0)
+        N = -N;
 
-    // Material-aware shading using BRDF/ONB interface
-    ONB basis = buildONB(N);
-    float3 wo = worldToLocal(basis, -WorldRayDirection());
-
-    // Simple directional light for single-bounce shading
-    float3 lightDir = normalize(float3(0.5, 1.0, -0.3));
-    float3 wi = worldToLocal(basis, lightDir);
-
-    float3 f = brdfEval(wi, wo, mat);
-    float cosTheta = max(wi.z, 0.0);
-
-    // Ambient + direct lighting
-    float3 color = mat.baseColor.rgb * 0.15 + f * cosTheta * 3.0;
-
-    // Metal: add reflection tint
-    if (mat.type == MAT_METAL)
-    {
-        float NdotL = max(dot(N, lightDir), 0.0);
-        color = mat.baseColor.rgb * (0.2 + 0.8 * NdotL);
-    }
-
-    // Dielectric: basic Fresnel-tinted shading
-    if (mat.type == MAT_DIELECTRIC)
-    {
-        float cosI = max(dot(N, -WorldRayDirection()), 0.0);
-        float r0 = (1.0 - mat.ior) / (1.0 + mat.ior);
-        r0 = r0 * r0;
-        float fresnel = r0 + (1.0 - r0) * pow(1.0 - cosI, 5.0);
-        color = float3(fresnel * 0.8 + 0.1);
-    }
+    // Interpolate UV
+    float2 uv0 = texcoords[i0 + sbt.vertexOffset];
+    float2 uv1 = texcoords[i1 + sbt.vertexOffset];
+    float2 uv2 = texcoords[i2 + sbt.vertexOffset];
+    float2 uv = bary.x * uv0 + bary.y * uv1 + bary.z * uv2;
 
     payload.isHit = 1;
-    payload.color = color;
+    payload.hitPos = hitPos;
+    payload.hitNormal = N;
+    payload.hitUV = uv;
+    payload.matIndex = sbt.matIndex;
 }

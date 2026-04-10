@@ -129,6 +129,7 @@ protected:
     std::string raygenEntry;
     std::string missEntryName;
     std::string hitEntryName;
+    uint32_t pushConstantSize;
 
     std::unique_ptr<StorageBufferResource> raygenSBT;
     std::unique_ptr<StorageBufferResource> missSBT;
@@ -153,9 +154,11 @@ public:
                        const std::string &_spvPath, const std::vector<HitSBTRecord> &hitRecords,
                        const std::string &_raygenEntry = "raygenMain",
                        const std::string &_missEntry = "missMain",
-                       const std::string &_hitEntry = "closestHitMain")
+                       const std::string &_hitEntry = "closestHitMain",
+                       size_t _pushConstantSize = 0)
         : Pipeline(_d, _cnt, bindings), spvPath(_spvPath),
-          raygenEntry(_raygenEntry), missEntryName(_missEntry), hitEntryName(_hitEntry)
+          raygenEntry(_raygenEntry), missEntryName(_missEntry), hitEntryName(_hitEntry),
+          pushConstantSize((uint32_t)_pushConstantSize)
     {
         createPipeline();
         createSBTs(hitRecords);
@@ -164,4 +167,5 @@ public:
     void traceRays(VkCommandBuffer commandBuffer, VkExtent3D extent);
     void bindPipeline(VkCommandBuffer commandBuffer) override;
     void bindDescriptorSets(VkCommandBuffer commandBuffer, int currentFrame) override;
+    void pushConstants(VkCommandBuffer commandBuffer, void *data);
 };

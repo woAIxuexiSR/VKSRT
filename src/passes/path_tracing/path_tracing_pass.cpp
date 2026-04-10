@@ -1,17 +1,22 @@
-#include "ray_tracing_pass.h"
+#include "path_tracing_pass.h"
 
 #include "camera.h"
 #include "imgui.h"
 
-REGISTER_RENDER_PASS_CPP(RayTracingPass, "ray_tracing");
+REGISTER_RENDER_PASS_CPP(PathTracingPass, "path_tracing");
 
-RayTracingPass::RayTracingPass(Device &_d, SwapChain &_sc, const json &params)
+PathTracingPass::PathTracingPass(Device &_d, SwapChain &_sc, const json &params)
     : PassBase(_d, _sc),
       colorImage{_d, VK_FORMAT_R32G32B32A32_SFLOAT, _sc.getExtent(),
                  VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT},
-      uniformBuffer{_d, sizeof(RTUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT},
+      uniformBuffer{_d, sizeof(PTUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT},
       model{_d}
 {
+    if (params.contains("maxDepth"))
+        pushConstants.maxDepth = params["maxDepth"].get<int>();
+    if (params.contains("rrDepth"))
+        pushConstants.rrDepth = params["rrDepth"].get<int>();
+
     // Load scene from params
     if (params.contains("scene"))
     {
@@ -38,7 +43,7 @@ RayTracingPass::RayTracingPass(Device &_d, SwapChain &_sc, const json &params)
     model.buildAccelerationStructures();
 }
 
-void RayTracingPass::init()
+void PathTracingPass::init()
 {
     std::vector<DescriptorLayoutBinding> bindings = {
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR},
@@ -49,37 +54,43 @@ void RayTracingPass::init()
 
     rtPipeline = std::make_unique<RayTracingPipeline>(
         device, 1, bindings,
-        "../shaders/ray_tracing/ray_tracing.spv",
+        "../shaders/path_tracing/path_tracing.spv",
         model.getHitSBTRecords(),
         "raygenMain", "missMain", "closestHitMain",
-        sizeof(RTPushConstants));
+        sizeof(PTPushConstants));
 
     std::vector<std::vector<DescriptorInfo>> infos = {
         {VkDescriptorImageInfo{colorImage.getSampler(), colorImage.getImageView(), VK_IMAGE_LAYOUT_GENERAL}},
-        {VkDescriptorBufferInfo{uniformBuffer.getBuffer(), 0, sizeof(RTUniform)}},
+        {VkDescriptorBufferInfo{uniformBuffer.getBuffer(), 0, sizeof(PTUniform)}},
     };
     auto modelInfos = model.getDescriptorInfos();
     infos.insert(infos.end(), modelInfos.begin(), modelInfos.end());
     rtPipeline->updateDescriptorSets(infos);
 }
 
-void RayTracingPass::drawUI()
+void PathTracingPass::drawUI()
 {
-    const char *modes[] = {"Material", "Position", "Normal", "UV"};
-    ImGui::Combo("Shading Mode", &pushConstants.shadingMode, modes, IM_ARRAYSIZE(modes));
+    ImGui::SliderInt("Max Depth", &pushConstants.maxDepth, 1, 32);
+    ImGui::SliderInt("RR Depth", &pushConstants.rrDepth, 1, 16);
+    ImGui::Text("Frame Index: %d", pushConstants.frameIndex);
 }
 
-void RayTracingPass::update(uint32_t currentFrame, InputState &inputState)
+void PathTracingPass::update(uint32_t currentFrame, InputState &inputState)
 {
+    if (!inputState.isChanged())
+        pushConstants.frameIndex++;
+    else
+        pushConstants.frameIndex = 0;
+
     ubo.viewInverse = camera->getInverseViewMatrix();
     ubo.projInverse = camera->getInverseProjectionMatrix();
 
     uniformBuffer.update(&ubo);
 }
 
-PassImageSlot RayTracingPass::recordCommand(VkCommandBuffer commandBuffer,
-                                             const PassImageSlot &inputSlot,
-                                             uint32_t currentFrame, uint32_t imageIndex)
+PassImageSlot PathTracingPass::recordCommand(VkCommandBuffer commandBuffer,
+                                              const PassImageSlot &inputSlot,
+                                              uint32_t currentFrame, uint32_t imageIndex)
 {
     auto colorExtent = colorImage.getExtent();
 
@@ -102,7 +113,7 @@ PassImageSlot RayTracingPass::recordCommand(VkCommandBuffer commandBuffer,
     return getOutputSlot();
 }
 
-PassImageSlot RayTracingPass::getOutputSlot() const
+PassImageSlot PathTracingPass::getOutputSlot() const
 {
     return {
         colorImage.getImage(),
