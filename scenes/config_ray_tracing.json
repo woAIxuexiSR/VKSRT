@@ -1,0 +1,14 @@
+{
+  "passes": [
+    {
+      "type": "ray_tracing",
+      "params": {
+        "scene": {
+          "type": "cornell_box"
+        }
+      }
+    },
+    { "type": "tonemap" },
+    { "type": "blit" }
+  ]
+}

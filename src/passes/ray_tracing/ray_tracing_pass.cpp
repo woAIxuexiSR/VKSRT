@@ -12,28 +12,7 @@ RayTracingPass::RayTracingPass(Device &_d, SwapChain &_sc, const json &params)
       uniformBuffer{_d, sizeof(RTUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT},
       model{_d}
 {
-    // Load scene from params
-    if (params.contains("scene"))
-    {
-        auto &scene = params["scene"];
-        std::string type = scene.value("type", "cornell_box");
-        if (type == "model")
-        {
-            std::string path = scene.at("path");
-            float scale = scene.value("scale", 1.0f);
-            glm::vec3 offset = {0, 0, 0};
-            if (scene.contains("offset"))
-            {
-                auto &o = scene["offset"];
-                offset = {o[0].get<float>(), o[1].get<float>(), o[2].get<float>()};
-            }
-            SceneLoader::loadModel(path, model, scale, offset);
-        }
-        else
-            SceneLoader::buildCornellBox(model);
-    }
-    else
-        SceneLoader::buildCornellBox(model);
+    SceneLoader::loadScene(params, model);
 
     model.buildAccelerationStructures();
 }

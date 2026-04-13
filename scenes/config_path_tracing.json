@@ -1,0 +1,16 @@
+{
+  "passes": [
+    {
+      "type": "path_tracing",
+      "params": {
+        "scene": {
+          "type": "cornell_box"
+        }
+      }
+    },
+    { "type": "taa" },
+    { "type": "bilateral" },
+    { "type": "tonemap" },
+    { "type": "blit" }
+  ]
+}

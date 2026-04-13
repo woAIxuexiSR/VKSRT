@@ -57,11 +57,11 @@ PassImageSlot TonemapPass::recordCommand(VkCommandBuffer commandBuffer,
 
     auto extent = ldrImage.getExtent();
 
-    // Transition input from GENERAL to SHADER_READ_ONLY for compute read
+    // Transition input -> SHADER_READ_ONLY for compute read
     device.imageBarrier(commandBuffer, inputSlot.image,
-                        VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                        VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT,
-                        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, 1);
+                        inputSlot.layout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                        VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT,
+                        VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, 1);
 
     // Transition LDR image to GENERAL for compute write
     device.imageBarrier(commandBuffer, ldrImage.getImage(),

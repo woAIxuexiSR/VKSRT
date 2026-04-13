@@ -74,11 +74,11 @@ PassImageSlot BilateralPass::recordCommand(VkCommandBuffer commandBuffer,
 
     auto extent = outputImage.getExtent();
 
-    // Transition input color: GENERAL -> SHADER_READ_ONLY for compute read
+    // Transition input color -> SHADER_READ_ONLY for compute read
     device.imageBarrier(commandBuffer, inputSlot.image,
-                        VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                        VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT,
-                        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, 1);
+                        inputSlot.layout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                        VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT,
+                        VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, 1);
 
     // G-buffer memory barrier: wait for RT write to finish (keep GENERAL layout)
     device.imageBarrier(commandBuffer, gbuffer->getNormalImage(),

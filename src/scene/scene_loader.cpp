@@ -8,6 +8,34 @@
 #include <iostream>
 #include <stdexcept>
 
+void SceneLoader::loadScene(const json &params, RayTracingModel &model)
+{
+    if (!params.contains("scene"))
+    {
+        buildCornellBox(model);
+        return;
+    }
+
+    auto &scene = params["scene"];
+    std::string type = scene.value("type", "cornell_box");
+    if (type == "model")
+    {
+        std::string path = scene.at("path");
+        float scale = scene.value("scale", 1.0f);
+        glm::vec3 offset = {0, 0, 0};
+        if (scene.contains("offset"))
+        {
+            auto &o = scene["offset"];
+            offset = {o[0].get<float>(), o[1].get<float>(), o[2].get<float>()};
+        }
+        loadModel(path, model, scale, offset);
+    }
+    else
+    {
+        buildCornellBox(model);
+    }
+}
+
 void SceneLoader::loadModel(const std::string &path, RayTracingModel &model,
                             float scale, glm::vec3 offset)
 {
