@@ -138,13 +138,14 @@ PassImageSlot TAAPass::recordCommand(VkCommandBuffer commandBuffer,
                         histSrcAccess, VK_ACCESS_2_SHADER_READ_BIT,
                         histSrcStage, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, 1);
 
-    // 3. G-buffer position memory barrier (keep GENERAL layout)
-    if (gbuffer && gbuffer->isWritten())
+    // 3. G-buffer position: ensure GENERAL layout for descriptor binding
+    if (gbuffer)
     {
+        VkImageLayout gbufOldLayout = firstFrame ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_GENERAL;
         device.imageBarrier(commandBuffer, gbuffer->getPositionImage(),
-                            VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
-                            VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT,
-                            VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, 1);
+                            gbufOldLayout, VK_IMAGE_LAYOUT_GENERAL,
+                            VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT,
+                            VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, 1);
     }
 
     // 4. Transition output to GENERAL for compute write

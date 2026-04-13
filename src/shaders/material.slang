@@ -19,4 +19,6 @@ public struct Material
     public int _pad0;
     public int _pad1;
     public int _pad2;
+
+    public bool canTransmit() { return type == MAT_DIELECTRIC; }
 };

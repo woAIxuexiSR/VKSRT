@@ -213,9 +213,9 @@ void raygenMain()
             break;
         }
 
-        // Determine shading normal per material type
+        // Determine shading normal: flip to face ray unless material can transmit
         float3 shadingN = payload.hitNormal;
-        if (mat.type != MAT_DIELECTRIC)
+        if (!mat.canTransmit())
         {
             if (dot(shadingN, rayDir) > 0.0)
                 shadingN = -shadingN;

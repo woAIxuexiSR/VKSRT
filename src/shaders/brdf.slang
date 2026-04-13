@@ -9,11 +9,11 @@ import math_utils;
 // Return value for BRDF sampling
 public struct BRDFSample
 {
-    public float3 wi;      // sampled incoming direction (local space)
-    public float3 value;   // BRDF value f(wi, wo)
-    public float  pdf;     // probability density
-    public bool   valid;   // false if sampling failed
-    public bool   isDelta; // true for delta distributions (Metal, Dielectric)
+    public float3 wi;         // sampled incoming direction (local space)
+    public float3 value;      // BRDF value f(wi, wo)
+    public float  pdf;        // probability density
+    public bool   valid;      // false if sampling failed
+    public bool   isDelta;    // true for delta distributions (Metal, Dielectric)
 };
 
 // --- BRDF evaluation: f(wi, wo) ---

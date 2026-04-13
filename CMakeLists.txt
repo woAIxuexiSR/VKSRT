@@ -46,6 +46,7 @@ file(GLOB SLANG_SHARED_MODULES "${SLANG_SHARED_DIR}/*.slang")
 set(RT_MULTI_ENTRY_SHADERS
     "ray_tracing/ray_tracing"
     "path_tracing/path_tracing"
+    "light_tracing/light_tracing"
 )
 
 foreach(RT_SHADER ${RT_MULTI_ENTRY_SHADERS})
@@ -72,7 +73,7 @@ file(GLOB_RECURSE SLANG_FILES "src/passes/**/*.slang")
 foreach(SLANG ${SLANG_FILES})
     # Skip multi-entry RT slang files (handled above)
     get_filename_component(SLANG_NAME ${SLANG} NAME)
-    if(SLANG_NAME STREQUAL "ray_tracing.slang" OR SLANG_NAME STREQUAL "path_tracing.slang")
+    if(SLANG_NAME STREQUAL "ray_tracing.slang" OR SLANG_NAME STREQUAL "path_tracing.slang" OR SLANG_NAME STREQUAL "light_tracing.slang")
         continue()
     endif()
     get_filename_component(FILE_NAME ${SLANG} NAME)
@@ -108,6 +109,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/src/passes/path_tracing
     ${CMAKE_SOURCE_DIR}/src/passes/bilateral
     ${CMAKE_SOURCE_DIR}/src/passes/taa
+    ${CMAKE_SOURCE_DIR}/src/passes/light_tracing
 )
 include_directories(${Stb_INCLUDE_DIR})
 
@@ -135,6 +137,7 @@ file(GLOB PASSES_FILES
     "${CMAKE_SOURCE_DIR}/src/passes/path_tracing/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/passes/bilateral/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/passes/taa/*.cpp"
+    "${CMAKE_SOURCE_DIR}/src/passes/light_tracing/*.cpp"
 )
 add_library(passes STATIC ${PASSES_FILES})
 target_link_libraries(passes PRIVATE
