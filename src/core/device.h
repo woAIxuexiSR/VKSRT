@@ -25,6 +25,7 @@ const std::vector<const char *> deviceExtensions = {
     VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
     VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
     VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME,
+    VK_KHR_RAY_QUERY_EXTENSION_NAME,
 };
 
 struct QueueFamilyIndices
@@ -127,6 +128,9 @@ public:
                       VkAccessFlags2 srcAccessMask, VkAccessFlags2 dstAccessMask,
                       VkPipelineStageFlags2 sourceStage, VkPipelineStageFlags2 destinationStage,
                       uint32_t mipLevels, uint32_t layerCount = 1, VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT);
+    void memoryBarrier(VkCommandBuffer commandBuffer,
+                       VkAccessFlags2 srcAccessMask, VkAccessFlags2 dstAccessMask,
+                       VkPipelineStageFlags2 sourceStage, VkPipelineStageFlags2 destinationStage);
     void bindViewport(VkCommandBuffer commandBuffer, VkExtent2D extent);
 
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const;

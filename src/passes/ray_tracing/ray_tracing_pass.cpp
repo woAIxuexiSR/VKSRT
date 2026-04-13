@@ -23,7 +23,8 @@ void RayTracingPass::init()
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR},
         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR},
     };
-    auto modelBindings = model.getDescriptorLayoutBindings();
+    VkShaderStageFlags hitStages = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+    auto modelBindings = model.getDescriptorBindings(hitStages);
     bindings.insert(bindings.end(), modelBindings.begin(), modelBindings.end());
 
     rtPipeline = std::make_unique<RayTracingPipeline>(

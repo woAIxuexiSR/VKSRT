@@ -44,13 +44,26 @@ src/
 │   ├── blit/             # 全屏 blit，将 RT 结果绘制到 swapchain
 │   │   ├── blit_pass.h/cpp
 │   │   └── blit.slang
-│   └── ray_tracing/      # 可视化调试工具（Material/Position/Normal/UV 模式）
-│       ├── ray_tracing_pass.h/cpp
-│       └── ray_tracing.slang
+│   ├── ray_tracing/      # 可视化调试工具（Material/Position/Normal/UV 模式）
+│   │   ├── ray_tracing_pass.h/cpp
+│   │   └── ray_tracing.slang
+│   ├── light_tracing/    # Light Tracing（光子发射 + splat + compose）
+│   │   ├── light_tracing_pass.h/cpp
+│   │   ├── light_tracing.slang
+│   │   └── lt_compose.slang
+│   └── wavefront_pt/     # Wavefront Path Tracing（阶段式 compute，ray query）
+│       ├── wavefront_pt_pass.h/cpp
+│       ├── wf_generate.slang
+│       ├── wf_prepare_indirect.slang
+│       ├── wf_extend.slang
+│       ├── wf_shade.slang
+│       ├── wf_shadow.slang
+│       └── wf_accumulate.slang
 ├── scene/          # 场景管理
 │   ├── camera.h/cpp           # 从 EasyVulkan model/camera 移植，含 prevViewProj
 │   ├── gbuffer.h              # App 管理的 G-buffer（position/normal/albedo）
-│   └── ray_tracing_model.h   # RT 场景（加速结构 + 几何数据）
+│   ├── ray_tracing_model.h/cpp # RT 场景（加速结构 + 几何数据 + descriptor helpers）
+│   └── scene_loader.h/cpp     # 场景加载（从 JSON config 构建 RayTracingModel）
 ├── gui/            # ImGui 集成
 │   └── imgui_renderer.h/cpp  # 从 EasyVulkan 移植
 └── main.cpp
@@ -100,14 +113,14 @@ passes 编译为独立静态库，链接到 main。
 - [x] Cornell Box 经典场景（两个 box + Metal 镜面墙）
 - [x] 截图功能（Save Image to PNG）
 
-### M5: 高级渲染特性
-- NEE（Next Event Estimation + MIS）
-- 双边滤波 Pass（Bilateral Denoise）
-- TAA Pass（Temporal Anti-Aliasing）
+### M5: 高级渲染特性 [已完成]
+- [x] NEE（Next Event Estimation + MIS）
+- [x] 双边滤波 Pass（Bilateral Denoise）
+- [x] TAA Pass（Temporal Anti-Aliasing）
 
-### M6: 其他积分方式
-- Light Tracer
-- Wavefront Path Tracing
+### M6: 其他积分方式 [已完成]
+- [x] Light Tracer（光子发射 + float atomic splat + compose）
+- [x] Wavefront Path Tracing（6 compute kernels + atomic compaction + indirect dispatch）
 
 ### M7: Stylized 渲染
 - Branch MC

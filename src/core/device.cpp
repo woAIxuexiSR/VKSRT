@@ -206,10 +206,15 @@ void Device::createLogicalDevice()
     rayTracingPipelineFeatures.rayTracingPipeline = VK_TRUE;
     rayTracingPipelineFeatures.pNext = &accelerationStructureFeatures;
 
+    VkPhysicalDeviceRayQueryFeaturesKHR rayQueryFeatures{};
+    rayQueryFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
+    rayQueryFeatures.rayQuery = VK_TRUE;
+    rayQueryFeatures.pNext = &rayTracingPipelineFeatures;
+
     VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures{};
     bufferDeviceAddressFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
     bufferDeviceAddressFeatures.bufferDeviceAddress = VK_TRUE;
-    bufferDeviceAddressFeatures.pNext = &rayTracingPipelineFeatures;
+    bufferDeviceAddressFeatures.pNext = &rayQueryFeatures;
 
     VkPhysicalDeviceVulkan11Features vulkan11Features{};
     vulkan11Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
@@ -558,6 +563,25 @@ void Device::imageBarrier(VkCommandBuffer commandBuffer, VkImage image, VkImageL
     dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
     dependencyInfo.imageMemoryBarrierCount = 1;
     dependencyInfo.pImageMemoryBarriers = &barrier;
+
+    vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
+}
+
+void Device::memoryBarrier(VkCommandBuffer commandBuffer,
+                           VkAccessFlags2 srcAccessMask, VkAccessFlags2 dstAccessMask,
+                           VkPipelineStageFlags2 sourceStage, VkPipelineStageFlags2 destinationStage)
+{
+    VkMemoryBarrier2 barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+    barrier.srcAccessMask = srcAccessMask;
+    barrier.dstAccessMask = dstAccessMask;
+    barrier.srcStageMask = sourceStage;
+    barrier.dstStageMask = destinationStage;
+
+    VkDependencyInfo dependencyInfo{};
+    dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    dependencyInfo.memoryBarrierCount = 1;
+    dependencyInfo.pMemoryBarriers = &barrier;
 
     vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
 }

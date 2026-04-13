@@ -61,14 +61,6 @@ StructuredBuffer<float> normalData;
 [[vk::binding(7)]]
 StructuredBuffer<float2> texcoords;
 
-struct LightTriangle
-{
-    float area;
-    int indexOffset;
-    int vertexOffset;
-    int matIndex;
-};
-
 [[vk::binding(8)]]
 StructuredBuffer<LightTriangle> lights;
 

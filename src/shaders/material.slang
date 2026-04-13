@@ -22,3 +22,11 @@ public struct Material
 
     public bool canTransmit() { return type == MAT_DIELECTRIC; }
 };
+
+public struct LightTriangle
+{
+    public float area;
+    public int indexOffset;
+    public int vertexOffset;
+    public int matIndex;
+};

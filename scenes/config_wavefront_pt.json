@@ -1,0 +1,18 @@
+{
+  "passes": [
+    {
+      "type": "wavefront_pt",
+      "params": {
+        "scene": {
+          "type": "cornell_box"
+        },
+        "maxDepth": 8,
+        "rrDepth": 3
+      }
+    },
+    { "type": "taa" },
+    { "type": "bilateral" },
+    { "type": "tonemap" },
+    { "type": "blit" }
+  ]
+}
