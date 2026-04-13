@@ -145,6 +145,66 @@ Pipeline::~Pipeline()
         vkDestroyDescriptorPool(device.getDevice(), descriptorPool, nullptr);
 }
 
+void Pipeline::loadPipelineCache(Device &device, const std::string &filename)
+{
+    std::vector<char> cacheData;
+    std::ifstream file(filename, std::ios::ate | std::ios::binary);
+    if (file.is_open())
+    {
+        size_t fileSize = (size_t)file.tellg();
+        cacheData.resize(fileSize);
+        file.seekg(0);
+        file.read(cacheData.data(), fileSize);
+        file.close();
+        std::cout << "Pipeline cache loaded from " << filename << " (" << fileSize << " bytes)" << std::endl;
+    }
+
+    VkPipelineCacheCreateInfo cacheCreateInfo{};
+    cacheCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+    cacheCreateInfo.initialDataSize = cacheData.size();
+    cacheCreateInfo.pInitialData = cacheData.empty() ? nullptr : cacheData.data();
+
+    if (vkCreatePipelineCache(device.getDevice(), &cacheCreateInfo, nullptr, &pipelineCache) != VK_SUCCESS)
+        throw std::runtime_error("failed to create pipeline cache!");
+}
+
+void Pipeline::savePipelineCache(Device &device, const std::string &filename)
+{
+    if (pipelineCache == VK_NULL_HANDLE)
+        return;
+
+    size_t dataSize = 0;
+    vkGetPipelineCacheData(device.getDevice(), pipelineCache, &dataSize, nullptr);
+    if (dataSize == 0)
+        return;
+
+    std::vector<char> cacheData(dataSize);
+    if (vkGetPipelineCacheData(device.getDevice(), pipelineCache, &dataSize, cacheData.data()) != VK_SUCCESS)
+    {
+        std::cout << "Failed to retrieve pipeline cache data" << std::endl;
+        return;
+    }
+
+    std::ofstream file(filename, std::ios::binary);
+    if (file.is_open())
+    {
+        file.write(cacheData.data(), dataSize);
+        file.close();
+        std::cout << "Pipeline cache saved to " << filename << " (" << dataSize << " bytes)" << std::endl;
+    }
+    else
+        std::cout << "Failed to save pipeline cache to " << filename << std::endl;
+}
+
+void Pipeline::destroyPipelineCache(Device &device)
+{
+    if (pipelineCache != VK_NULL_HANDLE)
+    {
+        vkDestroyPipelineCache(device.getDevice(), pipelineCache, nullptr);
+        pipelineCache = VK_NULL_HANDLE;
+    }
+}
+
 // ---- GraphicsPipeline ----
 
 void GraphicsPipeline::createPipeline()
@@ -269,7 +329,7 @@ void GraphicsPipeline::createPipeline()
     pipelineRenderingInfo.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
     pipelineInfo.pNext = &pipelineRenderingInfo;
 
-    if (vkCreateGraphicsPipelines(device.getDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS)
+    if (vkCreateGraphicsPipelines(device.getDevice(), pipelineCache, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS)
         throw std::runtime_error("failed to create graphics pipeline!");
 
     vkDestroyShaderModule(device.getDevice(), shaderModule, nullptr);
@@ -329,7 +389,7 @@ void ComputePipeline::createPipeline()
     pipelineCreateInfo.layout = pipelineLayout;
     pipelineCreateInfo.stage = computeShaderStageInfo;
 
-    if (vkCreateComputePipelines(device.getDevice(), VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &pipeline) != VK_SUCCESS)
+    if (vkCreateComputePipelines(device.getDevice(), pipelineCache, 1, &pipelineCreateInfo, nullptr, &pipeline) != VK_SUCCESS)
         throw std::runtime_error("failed to create compute pipeline!");
 
     vkDestroyShaderModule(device.getDevice(), computeShaderModule, nullptr);
@@ -431,7 +491,7 @@ void RayTracingPipeline::createPipeline()
     pipelineCreateInfo.layout = pipelineLayout;
 
     auto vkCreateRayTracingPipelinesKHR = device.loadDeviceFunction<PFN_vkCreateRayTracingPipelinesKHR>("vkCreateRayTracingPipelinesKHR");
-    if (vkCreateRayTracingPipelinesKHR(device.getDevice(), VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &pipeline) != VK_SUCCESS)
+    if (vkCreateRayTracingPipelinesKHR(device.getDevice(), VK_NULL_HANDLE, pipelineCache, 1, &pipelineCreateInfo, nullptr, &pipeline) != VK_SUCCESS)
         throw std::runtime_error("failed to create ray tracing pipeline!");
 
     vkDestroyShaderModule(device.getDevice(), shaderModule, nullptr);

@@ -56,6 +56,8 @@ public:
         if (vkAllocateCommandBuffers(device.getDevice(), &allocInfo, commandBuffers.data()) != VK_SUCCESS)
             throw std::runtime_error("failed to allocate command buffers!");
 
+        Pipeline::loadPipelineCache(device, "../../build/pipeline_cache.bin");
+
         RenderPassFactory::printRegistered();
         loadConfig(configPath);
     }
@@ -103,6 +105,8 @@ public:
             drawFrame();
         }
         vkDeviceWaitIdle(device.getDevice());
+        Pipeline::savePipelineCache(device, "../../build/pipeline_cache.bin");
+        Pipeline::destroyPipelineCache(device);
     }
 
 private:

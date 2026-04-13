@@ -43,6 +43,8 @@ protected:
     VkShaderModule createShaderModule(const std::vector<char> &code);
     virtual void createPipeline() = 0;
 
+    inline static VkPipelineCache pipelineCache = VK_NULL_HANDLE;
+
 public:
     Pipeline(Device &_d, uint32_t _cnt, const std::vector<DescriptorLayoutBinding> &bindings);
     virtual ~Pipeline();
@@ -57,6 +59,10 @@ public:
     virtual void bindPipeline(VkCommandBuffer commandBuffer) = 0;
     virtual void bindDescriptorSets(VkCommandBuffer commandBuffer, int currentFrame) = 0;
     void updateDescriptorSets(const std::vector<std::vector<DescriptorInfo>> &infos);
+
+    static void loadPipelineCache(Device &device, const std::string &filename);
+    static void savePipelineCache(Device &device, const std::string &filename);
+    static void destroyPipelineCache(Device &device);
 };
 
 // Graphics pipeline: single slang spv with vertex + fragment entry points
