@@ -25,8 +25,10 @@ vcpkg_installed/
 .env
 *.env
 
-# Claude Code (keep agents and CLAUDE.md, ignore local settings)
+# Claude Code
 .claude/settings.local.json
+.claude/**/*.md
+.claude/*.md
 
 # Planning docs (session-only)
 plan.md
