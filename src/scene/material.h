@@ -19,8 +19,8 @@ struct Material
     float ior{1.5f};
     int type{MAT_LAMBERTIAN};
     int diffuseTexIndex{-1};
-    int _pad0{0};
-    int _pad1{0};
+    int styleType{0};        // 0 = STYLE_NONE, future: 1, 2, ... for different g functions
+    float styleParam0{0.0f}; // parameter for stylization function g (e.g. gamma)
     int _pad2{0};
 };
 // Must match src/shaders/material.slang layout exactly

@@ -1,0 +1,19 @@
+{
+    "passes": [
+        {
+            "type": "branch_mc",
+            "params": {
+                "scene": { "type": "cornell_box" },
+                "maxDepth": 4,
+                "rrDepth": 3,
+                "innerSamples": [2, 1, 1, 1],
+                "useDebiasing": 1,
+                "debiasR": 0.5
+            }
+        },
+        { "type": "taa" },
+        { "type": "bilateral" },
+        { "type": "tonemap" },
+        { "type": "blit" }
+    ]
+}

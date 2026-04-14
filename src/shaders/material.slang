@@ -7,6 +7,13 @@ public static const int MAT_METAL      = 1;
 public static const int MAT_DIELECTRIC = 2;
 public static const int MAT_EMISSIVE   = 3;
 
+public static const int STYLE_NONE       = 0;
+public static const int STYLE_TOON       = 1;
+public static const int STYLE_EIGHT_BIT  = 2;
+public static const int STYLE_SATURATION = 3;
+public static const int STYLE_HALFTONE   = 4;
+public static const int STYLE_PALETTE    = 5;
+
 public struct Material
 {
     public float4 baseColor;       // rgb = albedo, a = alpha
@@ -16,8 +23,8 @@ public struct Material
     public float ior;              // index of refraction (glass: 1.5)
     public int type;               // MAT_LAMBERTIAN / MAT_METAL / MAT_DIELECTRIC / MAT_EMISSIVE
     public int diffuseTexIndex;    // -1 = no texture
-    public int _pad0;
-    public int _pad1;
+    public int styleType;          // 0 = STYLE_NONE
+    public float styleParam0;      // parameter for stylization function g
     public int _pad2;
 
     public bool canTransmit() { return type == MAT_DIELECTRIC; }
