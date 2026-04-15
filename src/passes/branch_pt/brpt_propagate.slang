@@ -1,13 +1,12 @@
-// Branch MC: Backward propagation + stylize + jackknife debiasing
-// 1D dispatch: [depthVertexCount/256, 1, 1]
+// Branch PT: Backward propagation + stylize + jackknife debiasing
+// Indirect 1D dispatch (upper bound) — reads actual range from depthRangeBuffer
 // Processes vertices at current depth (backward, from deepest to shallowest):
-//   - Leaf vertices: keep radiance as-is (local emission, no stylize)
+//   - Leaf vertices (firstChild < 0): stylize(le) if styled, else le
 //   - Non-leaf: traverse firstChild linked list, collect child.throughput * child.radiance * child.mis
-//   - Write per-child indirect to debias buffer
 //   - Apply stylize g(le + mean(direct + indirect))
-//   - Jackknife debiasing if enabled
+//   - Jackknife debiasing if enabled and styled
 
-import bmc_structs;
+import brpt_structs;
 import wavefront_structs;
 import material;
 import stylize;
@@ -16,15 +15,12 @@ struct PushConstants
 {
     int frameIndex;
     int maxDepth;
-    int rrDepth;
     int lightCount;
     int useNEE;
     int useMIS;
     int screenWidth;
     int screenHeight;
     int currentDepth;
-    int depthVertexStart;
-    int depthVertexCount;
     int useDebiasing;
     float debiasR;
     int innerSamples0;
@@ -32,37 +28,46 @@ struct PushConstants
     int innerSamples2;
     int innerSamples3;
     int maxVertices;
-    int _pad0;
-    int _pad1;
+    int tilePixelOffset;
+    int tilePixelCount;
+    int backwardMode;
+    int rrDepth;
 };
 
 [[vk::push_constant]]
 PushConstants pc;
 
 [[vk::binding(0)]]
-RWStructuredBuffer<BMCVertex> vertices;
+RWStructuredBuffer<BrPTVertex> vertices;
 
-[[vk::binding(19)]]
+[[vk::binding(2)]]
+RWStructuredBuffer<int2> depthRanges;
+
+// Debias buffers
+[[vk::binding(13)]]
 RWStructuredBuffer<float4> debiasDirectBuffer;
 
-[[vk::binding(20)]]
+[[vk::binding(14)]]
 RWStructuredBuffer<float4> debiasIndirectBuffer;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 {
-    uint threadIdx = dispatchThreadID.x;
-    if (threadIdx >= uint(pc.depthVertexCount)) return;
+    // Read actual depth range from GPU-written depthRangeBuffer
+    int2 range = depthRanges[pc.currentDepth];
+    int depthStart = range.x;
+    int depthCount = range.y;
 
-    int vtxIdx = pc.depthVertexStart + int(threadIdx);
+    uint threadIdx = dispatchThreadID.x;
+    if (threadIdx >= uint(depthCount)) return;
+
+    int vtxIdx = depthStart + int(threadIdx);
     if (vtxIdx >= pc.maxVertices) return;
 
-    BMCVertex vtx = vertices[vtxIdx];
+    BrPTVertex vtx = vertices[vtxIdx];
 
     // --- Collect children: compute throughput * radiance * mis for each child ---
-    // Leaf vertices (firstChild < 0) fall through with indirectRadiance=0,
-    // so stylize(le + 0) = stylize(le) — matching reference behavior.
     int nChildren = 0;
     float3 indirectRadiance = float3(0.0);
     int debiasIdx = vtx.debiasRadianceIdx;
@@ -77,8 +82,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     int childIdx = vtx.firstChild;
     while (childIdx >= 0 && childIdx < pc.maxVertices)
     {
-        BMCVertex child = vertices[childIdx];
-        // l = child.throughput * child.radiance * child.mis
+        BrPTVertex child = vertices[childIdx];
         float3 l = child.throughput * child.radiance * child.mis;
         indirectRadiance += l;
 
@@ -90,14 +94,13 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
         childIdx = child.nextSibling;
     }
 
-    // Local emission (stored by advance as local emission without throughput)
+    // Local emission (stored by advance)
     float3 le = vtx.radiance;
     int N = vtx.nInnerSamples;
     if (N <= 0) N = max(nChildren, 1);
 
+
     // --- No stylization: linear combination ---
-    // STYLE_NONE vertices always use shadow rays for NEE (never debias buffer),
-    // so le already contains NEE direct lighting from shadow kernel.
     if (vtx.styleType == STYLE_NONE)
     {
         vtx.radiance = le + indirectRadiance / float(N);
@@ -150,7 +153,6 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     float3 outRadiance = baseEstimator;
     for (int removal = 0; removal < N; removal++)
     {
-        // Sum all except removal
         float3 looDirectSum = float3(0.0);
         float3 looIndirectSum = float3(0.0);
         for (int j = 0; j < N; j++)

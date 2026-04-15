@@ -1,8 +1,8 @@
-// Branch MC: Initialize depth-0 vertices from camera rays
-// 2D dispatch: [width/16, height/16, 1]
-// Each pixel creates one depth-0 BMCVertex and traces primary ray via ray query
+// Branch PT: Initialize depth-0 vertices from camera rays
+// 1D dispatch: [(tilePixelCount+255)/256, 1, 1]
+// Each pixel in the tile creates one depth-0 BrPTVertex via atomic allocation
 
-import bmc_structs;
+import brpt_structs;
 import wavefront_structs;
 import material;
 import rng;
@@ -17,15 +17,12 @@ struct PushConstants
 {
     int frameIndex;
     int maxDepth;
-    int rrDepth;
     int lightCount;
     int useNEE;
     int useMIS;
     int screenWidth;
     int screenHeight;
     int currentDepth;
-    int depthVertexStart;
-    int depthVertexCount;
     int useDebiasing;
     float debiasR;
     int innerSamples0;
@@ -33,41 +30,40 @@ struct PushConstants
     int innerSamples2;
     int innerSamples3;
     int maxVertices;
-    int _pad0;
-    int _pad1;
+    int tilePixelOffset;
+    int tilePixelCount;
+    int backwardMode;
+    int rrDepth;
 };
 
 [[vk::push_constant]]
 PushConstants pc;
 
 [[vk::binding(0)]]
-RWStructuredBuffer<BMCVertex> vertices;
+RWStructuredBuffer<BrPTVertex> vertices;
 
 [[vk::binding(1)]]
-RWStructuredBuffer<RayData> rays;
+RWStructuredBuffer<uint> counters; // [0]=vtxCounter, [1]=debiasCounter, [2,3,4]=indirect dispatch
 
 [[vk::binding(2)]]
-RWStructuredBuffer<HitInfo> hitInfos;
-
-[[vk::binding(5)]]
 RWStructuredBuffer<int2> depthRanges; // [startIdx, count] per depth
 
-[[vk::binding(7)]]
+[[vk::binding(4)]]
 ConstantBuffer<CameraProperties> cam;
 
-[[vk::binding(8)]]
+[[vk::binding(5)]]
 RaytracingAccelerationStructure topLevelAS;
 
-[[vk::binding(9)]]
+[[vk::binding(6)]]
 StructuredBuffer<float> vertexData;
 
-[[vk::binding(10)]]
+[[vk::binding(7)]]
 StructuredBuffer<uint> indices;
 
-[[vk::binding(12)]]
+[[vk::binding(9)]]
 StructuredBuffer<float> normalData;
 
-[[vk::binding(15)]]
+[[vk::binding(12)]]
 StructuredBuffer<MeshInfo> meshInfos;
 
 float3 getVertex(uint index)
@@ -81,17 +77,18 @@ float3 getNormal(uint index)
 }
 
 [shader("compute")]
-[numthreads(16, 16, 1)]
+[numthreads(256, 1, 1)]
 void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 {
-    int2 pixel = int2(dispatchThreadID.xy);
-    if (pixel.x >= pc.screenWidth || pixel.y >= pc.screenHeight)
+    uint tid = dispatchThreadID.x;
+    if (tid >= uint(pc.tilePixelCount))
         return;
 
-    int pixelIdx = pixel.y * pc.screenWidth + pixel.x;
-    int vertexIdx = pixelIdx; // depth-0 vertices occupy [0, totalPixels)
+    // Map thread to full-screen pixel coordinate
+    int pixelIdx = pc.tilePixelOffset + int(tid);
+    int2 pixel = int2(pixelIdx % pc.screenWidth, pixelIdx / pc.screenWidth);
 
-    // Generate camera ray
+    // Generate camera ray with jitter
     uint seed = wangHash(uint(pixel.x * 1973u + pixel.y * 9277u + uint(pc.frameIndex) * 26699u) | 1u);
     float2 jitter = randFloat2(seed);
     float2 pixelCenter = float2(pixel) + jitter;
@@ -101,10 +98,9 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     float4 origin = mul(cam.viewInverse, float4(0, 0, 0, 1));
     float4 target = mul(cam.projInverse, float4(d.x, d.y, 1, 1));
     float4 direction = mul(cam.viewInverse, float4(normalize(target.xyz), 0));
-
     float3 rayDir = normalize(direction.xyz);
 
-    // Trace primary ray via ray query
+    // Trace primary ray via inline ray query
     RayDesc rayDesc;
     rayDesc.Origin = origin.xyz;
     rayDesc.TMin = 0.001;
@@ -115,8 +111,33 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     rq.TraceRayInline(topLevelAS, RAY_FLAG_FORCE_OPAQUE, 0xff, rayDesc);
     rq.Proceed();
 
-    // Write hit info
-    HitInfo hit;
+    // Atomically allocate vertex slot
+    uint vertexIdx;
+    InterlockedAdd(counters[0], 1u, vertexIdx);
+    if (vertexIdx >= uint(pc.maxVertices))
+        return;
+
+    // Build vertex with hit info embedded
+    BrPTVertex vtx;
+    vtx.throughput = float3(1.0);
+    vtx.seed = seed;
+    vtx.radiance = float3(0.0);
+    vtx.pixelIndex = pixelIdx;
+    vtx.wo = -rayDir;
+    vtx.depth = 0;
+    vtx.firstChild = -1;
+    vtx.nextSibling = -1;
+    vtx.parent = -1;
+    vtx.nInnerSamples = 0;
+    vtx.childIndex = 0;
+    vtx.debiasRadianceIdx = -1;
+    vtx.prevBsdfPdf = 0.0;
+    vtx.styleType = 0;
+    vtx.styleParam0 = 0.0;
+    vtx.debiasingSamples = 0;
+    vtx.actualBranchingDepth = 0;
+    vtx.mis = 1.0;
+
     if (rq.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
     {
         uint instanceIdx = rq.CommittedInstanceID();
@@ -133,56 +154,23 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
         float3 v0 = getVertex(i0 + mi.vertexOffset);
         float3 v1 = getVertex(i1 + mi.vertexOffset);
         float3 v2 = getVertex(i2 + mi.vertexOffset);
-        float3 hitPos = bary.x * v0 + bary.y * v1 + bary.z * v2;
 
         float3 n0 = getNormal(i0 + mi.vertexOffset);
         float3 n1 = getNormal(i1 + mi.vertexOffset);
         float3 n2 = getNormal(i2 + mi.vertexOffset);
-        float3 N = normalize(bary.x * n0 + bary.y * n1 + bary.z * n2);
 
-        hit.hitPos = hitPos;
-        hit.matIndex = mi.matIndex;
-        hit.hitNormal = N;
-        hit.isHit = 1;
+        vtx.hitPos = bary.x * v0 + bary.y * v1 + bary.z * v2;
+        vtx.hitNormal = normalize(bary.x * n0 + bary.y * n1 + bary.z * n2);
+        vtx.matIndex = mi.matIndex;
+        vtx.isHit = 1;
     }
     else
     {
-        hit.hitPos = float3(0.0);
-        hit.matIndex = 0;
-        hit.hitNormal = float3(0.0);
-        hit.isHit = 0;
+        vtx.hitPos = float3(0.0);
+        vtx.hitNormal = float3(0.0);
+        vtx.matIndex = 0;
+        vtx.isHit = 0;
     }
-    hitInfos[vertexIdx] = hit;
 
-    // Initialize depth-0 vertex
-    BMCVertex vtx;
-    vtx.throughput = float3(1.0);
-    vtx.seed = seed;
-    vtx.radiance = float3(0.0);
-    vtx.pixelIndex = pixelIdx;
-    vtx.wo = -rayDir;
-    vtx.depth = 0;
-    vtx.matIndex = hit.matIndex;
-    vtx.firstChild = -1;
-    vtx.nextSibling = -1;
-    vtx.parent = -1;
-    vtx.alive = hit.isHit;
-    vtx.nInnerSamples = 0;
-    vtx.childIndex = 0;
-    vtx.debiasRadianceIdx = -1;
-    vtx.hitPos = hit.hitPos;
-    vtx.prevBsdfPdf = 0.0;
-    vtx.hitNormal = hit.hitNormal;
-    vtx.styleType = 0;
-    vtx.styleParam0 = 0.0;
-    vtx.debiasingSamples = 0;
-    vtx.actualBranchingDepth = 0;
-    vtx.mis = 1.0;
     vertices[vertexIdx] = vtx;
-
-    // Write depth range for depth 0 (first thread only)
-    if (pixelIdx == 0)
-    {
-        depthRanges[0] = int2(0, pc.screenWidth * pc.screenHeight);
-    }
 }

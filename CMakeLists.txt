@@ -111,7 +111,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/src/passes/taa
     ${CMAKE_SOURCE_DIR}/src/passes/light_tracing
     ${CMAKE_SOURCE_DIR}/src/passes/wavefront_pt
-    ${CMAKE_SOURCE_DIR}/src/passes/branch_mc
+    ${CMAKE_SOURCE_DIR}/src/passes/branch_pt
 )
 include_directories(${Stb_INCLUDE_DIR})
 
@@ -141,7 +141,7 @@ file(GLOB PASSES_FILES
     "${CMAKE_SOURCE_DIR}/src/passes/taa/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/passes/light_tracing/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/passes/wavefront_pt/*.cpp"
-    "${CMAKE_SOURCE_DIR}/src/passes/branch_mc/*.cpp"
+    "${CMAKE_SOURCE_DIR}/src/passes/branch_pt/*.cpp"
 )
 add_library(passes STATIC ${PASSES_FILES})
 target_link_libraries(passes PRIVATE
