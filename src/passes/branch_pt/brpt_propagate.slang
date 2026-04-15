@@ -1,4 +1,4 @@
-// Branch PT: Backward propagation + stylize + jackknife debiasing
+// Branch PT: Backward propagation + stylize + debiasing (Jackknife or Telescoping)
 // Indirect 1D dispatch (upper bound) — reads actual range from depthRangeBuffer
 // Processes vertices at current depth (backward, from deepest to shallowest):
 //   - Leaf vertices (firstChild < 0): stylize(le) if styled, else le
@@ -30,7 +30,6 @@ struct PushConstants
     int maxVertices;
     int tilePixelOffset;
     int tilePixelCount;
-    int backwardMode;
     int rrDepth;
 };
 
@@ -117,58 +116,97 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
         return;
     }
 
-    // --- Jackknife debiasing ---
     int baseSamples = N - vtx.debiasingSamples;
     if (baseSamples < 1) baseSamples = 1;
-
-    // Compute base estimator: use only first baseSamples entries
-    float3 jkDirectSum = float3(0.0);
-    float3 jkIndirectSum = float3(0.0);
-    for (int i = 0; i < baseSamples; i++)
-    {
-        jkDirectSum += debiasDirectBuffer[debiasIdx + i].xyz;
-        jkIndirectSum += debiasIndirectBuffer[debiasIdx + i].xyz;
-    }
-    float3 baseEstimator = applyStylize(
-        (jkDirectSum + jkIndirectSum) / float(baseSamples) + le,
-        vtx.styleType, vtx.styleParam0);
-
-    // Extend to full estimator: add remaining debiasing samples
-    for (int i = baseSamples; i < N; i++)
-    {
-        jkDirectSum += debiasDirectBuffer[debiasIdx + i].xyz;
-        jkIndirectSum += debiasIndirectBuffer[debiasIdx + i].xyz;
-    }
-    float3 fullEstimator = applyStylize(
-        (jkDirectSum + jkIndirectSum) / float(N) + le,
-        vtx.styleType, vtx.styleParam0);
-
-    // PMF of geometric distribution: pmf = r * (1 - r)^(K - 1)
     float r = pc.debiasR;
-    int K = vtx.debiasingSamples;
-    float pmf = r * pow(1.0 - r, float(max(K - 1, 0)));
-    if (pmf < 1e-8) pmf = 1e-8; // safety clamp
 
-    // Leave-one-out correction
-    float3 outRadiance = baseEstimator;
-    for (int removal = 0; removal < N; removal++)
+    if (pc.useDebiasing == 2)
     {
-        float3 looDirectSum = float3(0.0);
-        float3 looIndirectSum = float3(0.0);
-        for (int j = 0; j < N; j++)
+        // --- Telescoping debiasing ---
+        // Incrementally accumulate: estimator = g(L̂_{N_base})
+        // + Σ_{i=1..K} [g(L̂_{N_base+i}) - g(L̂_{N_base+i-1})] / P(K>=i)
+        float3 runDirectSum = float3(0.0);
+        float3 runIndirectSum = float3(0.0);
+        for (int i = 0; i < baseSamples; i++)
         {
-            if (j == removal) continue;
-            looDirectSum += debiasDirectBuffer[debiasIdx + j].xyz;
-            looIndirectSum += debiasIndirectBuffer[debiasIdx + j].xyz;
+            runDirectSum += debiasDirectBuffer[debiasIdx + i].xyz;
+            runIndirectSum += debiasIndirectBuffer[debiasIdx + i].xyz;
         }
-        float3 looEstimator = applyStylize(
-            (looDirectSum + looIndirectSum) / float(N - 1) + le,
+
+        float3 prevEstimator = applyStylize(
+            (runDirectSum + runIndirectSum) / float(baseSamples) + le,
+            vtx.styleType, vtx.styleParam0);
+        float3 outRadiance = prevEstimator;
+
+        // Telescoping sum over extra samples
+        float survivalProb = 1.0; // P(K >= i) = (1-r)^(i-1)
+        for (int i = baseSamples; i < N; i++)
+        {
+            runDirectSum += debiasDirectBuffer[debiasIdx + i].xyz;
+            runIndirectSum += debiasIndirectBuffer[debiasIdx + i].xyz;
+
+            float3 curEstimator = applyStylize(
+                (runDirectSum + runIndirectSum) / float(i + 1) + le,
+                vtx.styleType, vtx.styleParam0);
+
+            // P(K >= k) = (1-r)^(k-1), where k = i - baseSamples + 1
+            if (survivalProb < 1e-8) survivalProb = 1e-8;
+            outRadiance += (curEstimator - prevEstimator) / survivalProb;
+
+            prevEstimator = curEstimator;
+            survivalProb *= (1.0 - r);
+        }
+
+        vtx.radiance = outRadiance;
+    }
+    else
+    {
+        // --- Jackknife debiasing (useDebiasing == 1) ---
+        float3 jkDirectSum = float3(0.0);
+        float3 jkIndirectSum = float3(0.0);
+        for (int i = 0; i < baseSamples; i++)
+        {
+            jkDirectSum += debiasDirectBuffer[debiasIdx + i].xyz;
+            jkIndirectSum += debiasIndirectBuffer[debiasIdx + i].xyz;
+        }
+        float3 baseEstimator = applyStylize(
+            (jkDirectSum + jkIndirectSum) / float(baseSamples) + le,
             vtx.styleType, vtx.styleParam0);
 
-        float3 delta = (fullEstimator - looEstimator) / float(N) / pmf;
-        outRadiance += delta;
+        for (int i = baseSamples; i < N; i++)
+        {
+            jkDirectSum += debiasDirectBuffer[debiasIdx + i].xyz;
+            jkIndirectSum += debiasIndirectBuffer[debiasIdx + i].xyz;
+        }
+        float3 fullEstimator = applyStylize(
+            (jkDirectSum + jkIndirectSum) / float(N) + le,
+            vtx.styleType, vtx.styleParam0);
+
+        int K = vtx.debiasingSamples;
+        float pmf = r * pow(1.0 - r, float(max(K - 1, 0)));
+        if (pmf < 1e-8) pmf = 1e-8;
+
+        float3 outRadiance = baseEstimator;
+        for (int removal = 0; removal < N; removal++)
+        {
+            float3 looDirectSum = float3(0.0);
+            float3 looIndirectSum = float3(0.0);
+            for (int j = 0; j < N; j++)
+            {
+                if (j == removal) continue;
+                looDirectSum += debiasDirectBuffer[debiasIdx + j].xyz;
+                looIndirectSum += debiasIndirectBuffer[debiasIdx + j].xyz;
+            }
+            float3 looEstimator = applyStylize(
+                (looDirectSum + looIndirectSum) / float(N - 1) + le,
+                vtx.styleType, vtx.styleParam0);
+
+            float3 delta = (fullEstimator - looEstimator) / float(N) / pmf;
+            outRadiance += delta;
+        }
+
+        vtx.radiance = outRadiance;
     }
 
-    vtx.radiance = outRadiance;
     vertices[vtxIdx] = vtx;
 }

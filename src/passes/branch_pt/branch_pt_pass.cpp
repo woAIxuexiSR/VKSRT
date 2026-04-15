@@ -119,9 +119,10 @@ BranchPTPass::BranchPTPass(Device &_d, SwapChain &_sc, const json &params)
         _d, sizeof(BrPTVertex) * maxVertices,
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 
-    // counterBuffer: 5 uints [vtxCounter, debiasCounter, dispatchX, dispatchY, dispatchZ]
+    // counterBuffer: [vtxCounter, debiasCounter, dispatchX, Y, Z, perDepthDispatch[depth*3]...]
+    uint32_t counterBufferSize = 5 + (pushConstants.maxDepth + 2) * 3;
     counterBuffer = std::make_unique<StorageBufferResource>(
-        _d, sizeof(uint32_t) * 5,
+        _d, sizeof(uint32_t) * counterBufferSize,
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 
     // depthRangeBuffer: int2 per depth level (maxDepth + 1 entries)
@@ -195,8 +196,8 @@ void BranchPTPass::init()
 
 void BranchPTPass::drawUI()
 {
-    ImGui::SliderInt("Max Depth", &pushConstants.maxDepth, 1, 16);
-    ImGui::SliderInt("RR Depth", &pushConstants.rrDepth, 1, 16);
+    ImGui::Text("Max Depth: %d", pushConstants.maxDepth);
+    ImGui::SliderInt("RR Depth", &pushConstants.rrDepth, 1, pushConstants.maxDepth);
     ImGui::Text("Frame Index: %d", pushConstants.frameIndex);
 
     ImGui::Separator();
@@ -216,55 +217,29 @@ void BranchPTPass::drawUI()
     ImGui::Text("Vertices/Pixel: %d", verticesPerPixel);
     ImGui::Text("Pixels/Pass: %d", pixelsPerPass);
     ImGui::Text("Max Vertices: %d", pushConstants.maxVertices);
-    ImGui::SliderInt("Inner N0", &pushConstants.innerSamples0, 1, 8);
-    ImGui::SliderInt("Inner N1", &pushConstants.innerSamples1, 1, 8);
-    ImGui::SliderInt("Inner N2", &pushConstants.innerSamples2, 1, 4);
-    ImGui::SliderInt("Inner N3+", &pushConstants.innerSamples3, 1, 4);
-
-    bool debias = pushConstants.useDebiasing != 0;
-    if (ImGui::Checkbox("Use Debiasing", &debias))
-        pushConstants.useDebiasing = debias ? 1 : 0;
-    if (pushConstants.useDebiasing)
-        ImGui::SliderFloat("Debias R", &pushConstants.debiasR, 0.1f, 0.9f);
+    ImGui::Text("Inner Samples: [%d, %d, %d, %d]",
+                pushConstants.innerSamples0, pushConstants.innerSamples1,
+                pushConstants.innerSamples2, pushConstants.innerSamples3);
+    const char* debiasNames[] = {"Off", "Jackknife", "Telescoping"};
+    int debiasMode = pushConstants.useDebiasing;
+    if (debiasMode < 0 || debiasMode > 2) debiasMode = 0;
+    ImGui::Text("Debiasing: %s (R=%.2f)", debiasNames[debiasMode], pushConstants.debiasR);
 }
 
 void BranchPTPass::update(uint32_t currentFrame, InputState &inputState)
 {
     static int lastNEE = pushConstants.useNEE;
     static int lastMIS = pushConstants.useMIS;
-    static int lastMaxDepth = pushConstants.maxDepth;
     static int lastRRDepth = pushConstants.rrDepth;
-    static int lastN0 = pushConstants.innerSamples0;
-    static int lastN1 = pushConstants.innerSamples1;
-    static int lastN2 = pushConstants.innerSamples2;
-    static int lastN3 = pushConstants.innerSamples3;
-    static int lastDebias = pushConstants.useDebiasing;
-    static float lastDebiasR = pushConstants.debiasR;
 
     if (pushConstants.useNEE != lastNEE || pushConstants.useMIS != lastMIS ||
-        pushConstants.maxDepth != lastMaxDepth || pushConstants.rrDepth != lastRRDepth ||
-        pushConstants.innerSamples0 != lastN0 || pushConstants.innerSamples1 != lastN1 ||
-        pushConstants.innerSamples2 != lastN2 || pushConstants.innerSamples3 != lastN3 ||
-        pushConstants.useDebiasing != lastDebias || pushConstants.debiasR != lastDebiasR)
+        pushConstants.rrDepth != lastRRDepth)
     {
         inputState.keyboardChanged = true;
         lastNEE = pushConstants.useNEE;
         lastMIS = pushConstants.useMIS;
-        lastMaxDepth = pushConstants.maxDepth;
         lastRRDepth = pushConstants.rrDepth;
-        lastN0 = pushConstants.innerSamples0;
-        lastN1 = pushConstants.innerSamples1;
-        lastN2 = pushConstants.innerSamples2;
-        lastN3 = pushConstants.innerSamples3;
-        lastDebias = pushConstants.useDebiasing;
-        lastDebiasR = pushConstants.debiasR;
     }
-
-    // Sync innerSamples array
-    innerSamples[0] = pushConstants.innerSamples0;
-    innerSamples[1] = pushConstants.innerSamples1;
-    innerSamples[2] = pushConstants.innerSamples2;
-    innerSamples[3] = pushConstants.innerSamples3;
 
     if (!inputState.isChanged())
         pushConstants.frameIndex++;
@@ -317,7 +292,7 @@ PassImageSlot BranchPTPass::recordCommand(VkCommandBuffer commandBuffer,
 
 
         // --- Clear counters and depth ranges for this tile ---
-        vkCmdFillBuffer(commandBuffer, counterBuffer->getBuffer(), 0, sizeof(uint32_t) * 5, 0);
+        vkCmdFillBuffer(commandBuffer, counterBuffer->getBuffer(), 0, VK_WHOLE_SIZE, 0);
         vkCmdFillBuffer(commandBuffer, depthRangeBuffer->getBuffer(), 0,
                         sizeof(DepthRange) * (pushConstants.maxDepth + 2), 0);
         device.memoryBarrier(commandBuffer,
@@ -373,25 +348,17 @@ PassImageSlot BranchPTPass::recordCommand(VkCommandBuffer commandBuffer,
 
         // ============================================================
         // PHASE 3: Backward pass — propagate from deepest to shallowest
+        // Uses per-depth indirect args stored by forward prepareIndirect
         // ============================================================
         for (int depth = pushConstants.maxDepth - 1; depth >= 0; depth--)
         {
             pushConstants.currentDepth = depth;
 
-            // PrepareIndirect in backward mode (_pad0=1): read depthRanges[depth], write indirect args
-            pushConstants.backwardMode = 1;
-            prepareIndirectPipeline->bindPipeline(commandBuffer);
-            prepareIndirectPipeline->bindDescriptorSets(commandBuffer, currentFrame);
-            prepareIndirectPipeline->pushConstants(commandBuffer, &pushConstants);
-            vkCmdDispatch(commandBuffer, 1, 1, 1);
-            pushConstants.backwardMode = 0;
-
-            computeBarrier(commandBuffer);
-
             propagatePipeline->bindPipeline(commandBuffer);
             propagatePipeline->bindDescriptorSets(commandBuffer, currentFrame);
             propagatePipeline->pushConstants(commandBuffer, &pushConstants);
-            vkCmdDispatchIndirect(commandBuffer, counterBuffer->getBuffer(), 2 * sizeof(uint32_t));
+            VkDeviceSize indirectOffset = (5 + depth * 3) * sizeof(uint32_t);
+            vkCmdDispatchIndirect(commandBuffer, counterBuffer->getBuffer(), indirectOffset);
 
             computeBarrier(commandBuffer);
         }

@@ -63,10 +63,9 @@ struct BrPTPushConstants
     int maxVertices{0};
     int tilePixelOffset{0};      // starting pixel index for current tile
     int tilePixelCount{0};       // number of pixels in current tile
-    int backwardMode{0};         // 1 = backward pass in prepareIndirect
     int rrDepth{3};              // Russian Roulette starts at this depth
 };
-static_assert(sizeof(BrPTPushConstants) == 76, "BrPTPushConstants must be 76 bytes");
+static_assert(sizeof(BrPTPushConstants) == 72, "BrPTPushConstants must be 72 bytes");
 
 // Per-depth range: [startIdx, count]
 struct DepthRange

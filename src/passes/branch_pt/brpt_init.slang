@@ -32,7 +32,6 @@ struct PushConstants
     int maxVertices;
     int tilePixelOffset;
     int tilePixelCount;
-    int backwardMode;
     int rrDepth;
 };
 

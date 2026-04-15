@@ -4,10 +4,10 @@
             "type": "branch_pt",
             "params": {
                 "scene": { "type": "cornell_box" },
-                "maxDepth": 5,
+                "maxDepth": 4,
                 "rrDepth": 3,
                 "innerSamples": [4, 2, 1, 1],
-                "useDebiasing": 1,
+                "useDebiasing": 2,
                 "debiasR": 0.8
             }
         },

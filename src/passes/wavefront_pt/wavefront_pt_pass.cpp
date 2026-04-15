@@ -174,8 +174,9 @@ void WavefrontPTPass::update(uint32_t currentFrame, InputState &inputState)
 void WavefrontPTPass::computeBarrier(VkCommandBuffer cmd)
 {
     device.memoryBarrier(cmd,
+                         VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
+                         VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_READ_BIT |
                          VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-                         VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
                          VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                          VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 }
