@@ -165,7 +165,7 @@ void raygenMain()
         }
 
         // Hit emissive surface: add emission with MIS weight
-        if (mat.type == MAT_EMISSIVE)
+        if (mat.isEmissive())
         {
             float3 emission = mat.emission.rgb * mat.emission.a;
             float misWeight = 1.0;
@@ -214,7 +214,7 @@ void raygenMain()
         }
 
         // --- NEE: Direct light sampling ---
-        if (pc.useNEE != 0 && pc.lightCount > 0 && mat.type == MAT_LAMBERTIAN)
+        if (pc.useNEE != 0 && pc.lightCount > 0 && !mat.isDeltaBRDF())
         {
             int lightIdx = int(randFloat(seed) * float(pc.lightCount));
             lightIdx = min(lightIdx, pc.lightCount - 1);
@@ -277,8 +277,7 @@ void raygenMain()
         ONB basis = buildONB(shadingN);
         float3 wo = worldToLocal(basis, -rayDir);
 
-        float2 rng2 = randFloat2(seed);
-        BRDFSample s = brdfSample(wo, mat, rng2);
+        BRDFSample s = brdfSample(wo, mat, randFloat3(seed));
 
         if (!s.valid || s.pdf < 1e-6)
             break;
@@ -290,7 +289,7 @@ void raygenMain()
         if (s.isDelta)
             beta *= s.value;
         else
-            beta *= s.value * max(s.wi.z, 0.0) / s.pdf;
+            beta *= s.value * abs(s.wi.z) / s.pdf;
 
         // Set up next ray
         rayPos = payload.hitPos;

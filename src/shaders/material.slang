@@ -7,6 +7,8 @@ public static const int MAT_METAL      = 1;
 public static const int MAT_DIELECTRIC = 2;
 public static const int MAT_EMISSIVE   = 3;
 
+public static const float DELTA_ROUGHNESS_THRESHOLD = 0.001;
+
 public static const int STYLE_NONE       = 0;
 public static const int STYLE_TOON       = 1;
 public static const int STYLE_EIGHT_BIT  = 2;
@@ -28,6 +30,14 @@ public struct Material
     public int _pad2;
 
     public bool canTransmit() { return type == MAT_DIELECTRIC; }
+    public bool isEmissive()  { return type == MAT_EMISSIVE; }
+
+    public bool isDeltaBRDF()
+    {
+        if (type == MAT_DIELECTRIC) return true; // always delta
+        if (type == MAT_METAL) return roughness < DELTA_ROUGHNESS_THRESHOLD;
+        return false;
+    }
 };
 
 public struct LightTriangle

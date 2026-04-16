@@ -129,7 +129,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     }
 
     // --- Emissive hit: add emission with MIS weight ---
-    if (mat.type == MAT_EMISSIVE)
+    if (mat.isEmissive())
     {
         float3 emission = mat.emission.rgb * mat.emission.a;
         float misWeight = 1.0;
@@ -177,7 +177,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     }
 
     // --- NEE: Direct light sampling ---
-    if (pc.useNEE != 0 && pc.lightCount > 0 && mat.type == MAT_LAMBERTIAN)
+    if (pc.useNEE != 0 && pc.lightCount > 0 && !mat.isDeltaBRDF())
     {
         int lightIdx = int(randFloat(path.seed) * float(pc.lightCount));
         lightIdx = min(lightIdx, pc.lightCount - 1);
@@ -238,8 +238,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     ONB basis = buildONB(shadingN);
     float3 wo = worldToLocal(basis, -ray.direction);
 
-    float2 rng2 = randFloat2(path.seed);
-    BRDFSample s = brdfSample(wo, mat, rng2);
+    BRDFSample s = brdfSample(wo, mat, randFloat3(path.seed));
 
     if (!s.valid || s.pdf < 1e-6)
     {
@@ -255,7 +254,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     if (s.isDelta)
         path.throughput *= s.value;
     else
-        path.throughput *= s.value * max(s.wi.z, 0.0) / s.pdf;
+        path.throughput *= s.value * abs(s.wi.z) / s.pdf;
 
     // Set up next ray
     rays[pathIdx].origin = hit.hitPos;

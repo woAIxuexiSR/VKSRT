@@ -51,14 +51,19 @@ src/
 │   │   ├── light_tracing_pass.h/cpp
 │   │   ├── light_tracing.slang
 │   │   └── lt_compose.slang
-│   └── wavefront_pt/     # Wavefront Path Tracing（阶段式 compute，ray query）
-│       ├── wavefront_pt_pass.h/cpp
-│       ├── wf_generate.slang
-│       ├── wf_prepare_indirect.slang
-│       ├── wf_extend.slang
-│       ├── wf_shade.slang
-│       ├── wf_shadow.slang
-│       └── wf_accumulate.slang
+│   ├── wavefront_pt/     # Wavefront Path Tracing（阶段式 compute，ray query）
+│   │   ├── wavefront_pt_pass.h/cpp
+│   │   ├── wf_generate.slang
+│   │   ├── wf_prepare_indirect.slang
+│   │   ├── wf_extend.slang
+│   │   ├── wf_shade.slang
+│   │   ├── wf_shadow.slang
+│   │   └── wf_accumulate.slang
+│   └── branch_pt/        # Branch PT（树状路径分叉 + stylized rendering）
+│       ├── branch_pt_pass.h/cpp
+│       ├── brpt_advance.slang
+│       ├── brpt_propagate.slang
+│       └── brpt_accumulate.slang
 ├── scene/          # 场景管理
 │   ├── camera.h/cpp           # 从 EasyVulkan model/camera 移植，含 prevViewProj
 │   ├── gbuffer.h              # App 管理的 G-buffer（position/normal/albedo）
@@ -123,8 +128,11 @@ passes 编译为独立静态库，链接到 main。
 - [x] Wavefront Path Tracing（6 compute kernels + atomic compaction + indirect dispatch）
 
 ### M7: Stylized 渲染
-- Branch MC
+- [x] Branch MC
 - 卡通渲染 idea 实现
+- [x] GGX microfacet BRDF（Metal GGX VNDF + Lambertian diffuse+specular）
+- [x] 离线渲染模式（--offline + PNG 输出）
+- [x] 材质类型封装（isDeltaBRDF/isEmissive/canTransmit）
 
 ## Build Commands
 ```bash

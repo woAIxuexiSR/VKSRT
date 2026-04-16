@@ -46,3 +46,89 @@ public float powerHeuristic(float pdfA, float pdfB)
     float b2 = pdfB * pdfB;
     return a2 / (a2 + b2);
 }
+
+// ============================================================
+// GGX Microfacet utilities
+// ============================================================
+
+// GGX (Trowbridge-Reitz) Normal Distribution Function
+// alpha = roughness (NOT pre-squared; squared internally)
+public float D_GGX(float NdotH, float alpha)
+{
+    if (NdotH <= 0.0) return 0.0;
+    float a2 = alpha * alpha;
+    float denom = NdotH * NdotH * (a2 - 1.0) + 1.0;
+    return a2 / (PI * denom * denom);
+}
+
+// Smith G1 masking function for GGX
+public float G1_SmithGGX(float NdotX, float alpha)
+{
+    if (NdotX <= 0.0) return 0.0;
+    float a2 = alpha * alpha;
+    return 2.0 * NdotX / (NdotX + sqrt(a2 + (1.0 - a2) * NdotX * NdotX));
+}
+
+// Smith separable G2 = G1(V) * G1(L)
+public float G_SmithGGX(float NdotV, float NdotL, float alpha)
+{
+    return G1_SmithGGX(NdotV, alpha) * G1_SmithGGX(NdotL, alpha);
+}
+
+// GGX VNDF importance sampling (Heitz 2018, simplified spherical cap variant)
+// Ve: view direction in local space (z-up), must have Ve.z > 0
+// alpha: roughness (squared internally by D_GGX/G1; here used as stretch factor)
+// u: float2 uniform random in [0,1)
+// Returns: sampled half-vector (microfacet normal) in local space
+public float3 sampleGGXVNDF(float3 Ve, float alpha, float2 u)
+{
+    // Stretch the view vector to the hemisphere configuration
+    float3 Vh = normalize(float3(alpha * Ve.x, alpha * Ve.y, Ve.z));
+
+    // Build orthonormal basis around Vh
+    float lensq = Vh.x * Vh.x + Vh.y * Vh.y;
+    float3 T1 = lensq > 0.0 ? float3(-Vh.y, Vh.x, 0.0) / sqrt(lensq) : float3(1.0, 0.0, 0.0);
+    float3 T2 = cross(Vh, T1);
+
+    // Sample a point on the hemisphere (spherical cap method)
+    float r = sqrt(u.x);
+    float phi = 2.0 * PI * u.y;
+    float t1 = r * cos(phi);
+    float t2 = r * sin(phi);
+    float s = 0.5 * (1.0 + Vh.z);
+    t2 = (1.0 - s) * sqrt(1.0 - t1 * t1) + s * t2;
+
+    // Compute the normal on the hemisphere
+    float3 Nh = t1 * T1 + t2 * T2 + sqrt(max(0.0, 1.0 - t1 * t1 - t2 * t2)) * Vh;
+
+    // Unstretch
+    return normalize(float3(alpha * Nh.x, alpha * Nh.y, max(0.0, Nh.z)));
+}
+
+// PDF of VNDF sampling for the reflected direction wi
+// Ve: view/outgoing direction in local space (z-up)
+// H: half-vector (microfacet normal) in local space
+// alpha: roughness (same as passed to D_GGX / sampleGGXVNDF)
+// Returns: pdf in solid angle measure of the reflected direction
+public float ggxReflectionPdf(float3 Ve, float3 H, float alpha)
+{
+    float NdotH = H.z;
+    float VdotH = max(dot(Ve, H), 0.0);
+    if (VdotH <= 0.0 || NdotH <= 0.0) return 0.0;
+
+    // VNDF pdf for half-vector: D(H) * G1(V) * VdotH / Ve.z
+    float D = D_GGX(NdotH, alpha);
+    float G1 = G1_SmithGGX(Ve.z, alpha);
+    float pdfH = D * G1 * VdotH / Ve.z;
+
+    // Jacobian: dH/dwi for reflection = 1 / (4 * VdotH)
+    return pdfH / (4.0 * VdotH);
+}
+
+// Vector Fresnel (Schlick) — for metallic materials where F0 = baseColor
+public float3 fresnelSchlickVec3(float cosTheta, float3 F0)
+{
+    float x = 1.0 - cosTheta;
+    float x5 = x * x * x * x * x;
+    return F0 + (float3(1.0) - F0) * x5;
+}

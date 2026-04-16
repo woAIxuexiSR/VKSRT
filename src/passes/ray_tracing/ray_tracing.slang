@@ -114,7 +114,7 @@ void raygenMain()
             Material mat = materials[payload.matIndex];
             float3 N = payload.hitNormal;
 
-            if (mat.type == MAT_EMISSIVE)
+            if (mat.isEmissive())
             {
                 color = mat.emission.rgb * mat.emission.a;
             }

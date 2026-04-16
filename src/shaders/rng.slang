@@ -21,3 +21,8 @@ public float2 randFloat2(inout uint seed)
 {
     return float2(randFloat(seed), randFloat(seed));
 }
+
+public float3 randFloat3(inout uint seed)
+{
+    return float3(randFloat(seed), randFloat(seed), randFloat(seed));
+}

@@ -247,7 +247,7 @@ void raygenMain()
 
         Material mat = materials[payload.matIndex];
 
-        if (mat.type == MAT_EMISSIVE) break;
+        if (mat.isEmissive()) break;
 
         float3 hitN = normalize(payload.hitNormal);
         if (dot(hitN, rayDir) > 0.0 && !mat.canTransmit())
@@ -257,7 +257,7 @@ void raygenMain()
         ONB basis = buildONB(hitN);
         float3 wo = worldToLocal(basis, -rayDir);
 
-        BRDFSample s = brdfSample(wo, mat, randFloat2(seed));
+        BRDFSample s = brdfSample(wo, mat, randFloat3(seed));
         if (!s.valid || s.pdf < 1e-6) break;
 
         // === Camera connection ===
@@ -329,7 +329,7 @@ void raygenMain()
         if (s.isDelta)
             beta *= s.value;
         else
-            beta *= s.value * max(s.wi.z, 0.0) / s.pdf;
+            beta *= s.value * abs(s.wi.z) / s.pdf;
 
         rayPos = payload.hitPos;
         rayDir = normalize(localToWorld(basis, s.wi));

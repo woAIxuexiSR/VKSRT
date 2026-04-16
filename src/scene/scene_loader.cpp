@@ -169,8 +169,8 @@ void SceneLoader::buildCornellBox(RayTracingModel &model)
     green.roughness = 1.0f;
 
     Material mirror{};
-    mirror.baseColor = {0.95f, 0.95f, 0.95f, 1.0f};
-    mirror.roughness = 0.0f;
+    mirror.baseColor = {0.95f, 0.7f, 0.3f, 1.0f}; // gold
+    mirror.roughness = 0.15f;
     mirror.metallic = 1.0f;
     mirror.type = MAT_METAL;
 

@@ -201,7 +201,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     vtx.styleParam0 = mat.styleParam0;
 
     // --- Emissive hit ---
-    if (mat.type == MAT_EMISSIVE)
+    if (mat.isEmissive())
     {
         float3 emission = mat.emission.rgb * mat.emission.a;
         vtx.radiance = emission;
@@ -251,9 +251,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     }
 
     // --- Determine branching factor ---
-    bool needBranching = mat.roughness >= 0.01 || (mat.type != MAT_METAL && mat.type != MAT_DIELECTRIC);
-    if (mat.roughness < 0.01 && (mat.type == MAT_METAL || mat.type == MAT_DIELECTRIC))
-        needBranching = false;
+    bool needBranching = !mat.isDeltaBRDF();
 
     int baseSamples;
     int debiasingSamples = 0;
@@ -329,7 +327,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
         // --- NEE for this child ---
         float3 localDirect = float3(0.0);
 
-        bool isDelta = (mat.type == MAT_METAL || mat.type == MAT_DIELECTRIC) && mat.roughness < 0.01;
+        bool isDelta = mat.isDeltaBRDF();
         if (pc.useNEE != 0 && pc.lightCount > 0 && !isDelta)
         {
             int lightIdx = int(randFloat(vtx.seed) * float(pc.lightCount));
@@ -391,8 +389,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
         }
 
         // --- BRDF sampling for child ---
-        float2 rng2 = randFloat2(vtx.seed);
-        BRDFSample s = brdfSample(wo_local, mat, rng2);
+        BRDFSample s = brdfSample(wo_local, mat, randFloat3(vtx.seed));
 
         if (!s.valid || s.pdf < 1e-6)
         {
@@ -405,7 +402,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
         if (s.isDelta)
             edgeThroughput = s.value;
         else
-            edgeThroughput = s.value * max(s.wi.z, 0.0) / s.pdf;
+            edgeThroughput = s.value * abs(s.wi.z) / s.pdf;
 
         // Inline ray trace for child
         float3 childDir = normalize(localToWorld(basis, s.wi));
