@@ -2,6 +2,7 @@
 
 #include "pass_base.h"
 #include "pipeline.h"
+#include "resource.h"
 
 #include <memory>
 
@@ -14,12 +15,18 @@ private:
     VkImageView lastBoundInputView{VK_NULL_HANDLE};
     VkSampler lastBoundInputSampler{VK_NULL_HANDLE};
 
+    // Offline mode: render to this image instead of swapchain
+    std::unique_ptr<ImageResource> offlineImage;
+    bool offlineMode{false};
+
 public:
     BlitPass(Device &_d, SwapChain &_sc, const json &params);
 
     std::string getName() const override { return "Blit"; }
     bool canDisable() const override { return false; }
+    PassImageSlot getOutputSlot() const override;
 
+    void setOfflineMode(bool offline);
     void init() override;
     void drawUI() override;
     PassImageSlot recordCommand(VkCommandBuffer commandBuffer,

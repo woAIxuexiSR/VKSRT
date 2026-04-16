@@ -32,3 +32,6 @@ vcpkg_installed/
 
 # Planning docs (session-only)
 plan.md
+
+# Images
+*.png

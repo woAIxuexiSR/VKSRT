@@ -78,11 +78,13 @@ void Window::keyCallback(GLFWwindow *window, int key, int scancode, int action, 
     }
 }
 
-Window::Window(int _w, int _h, const std::string &_title)
+Window::Window(int _w, int _h, const std::string &_title, bool visible)
     : title(_title)
 {
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    if (!visible)
+        glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
     int width = _w, height = _h;
     inputState.width = width;

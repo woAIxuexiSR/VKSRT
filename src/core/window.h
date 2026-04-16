@@ -43,7 +43,7 @@ private:
     static void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods);
 
 public:
-    Window(int _w, int _h, const std::string &_title);
+    Window(int _w, int _h, const std::string &_title, bool visible = true);
     ~Window();
 
     Window(const Window &) = delete;

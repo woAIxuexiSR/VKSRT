@@ -12,8 +12,12 @@
 #include "pass_base.h"
 #include "camera.h"
 #include "gbuffer.h"
+#include "blit_pass.h"
 
 #include <chrono>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <algorithm>
 
@@ -22,10 +26,19 @@
 static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 static constexpr int WIDTH = 1600, HEIGHT = 1200;
 
+struct OfflineConfig
+{
+    bool enabled{false};
+    int samples{0};
+    std::string outputFilename{"output"};
+};
+
 class Application
 {
 public:
-    Window window{WIDTH, HEIGHT, "VKSRT"};
+    OfflineConfig offlineConfig;
+
+    Window window;
     Device device{window};
 
     std::unique_ptr<SwapChain> swapChain{std::make_unique<SwapChain>(device, window.getExtent(), MAX_FRAMES_IN_FLIGHT)};
@@ -41,8 +54,10 @@ public:
     char saveFilename[128] = "screenshot";
 
 public:
-    Application(const std::string &configPath)
-        : camera({0.5f, -2.0f, 0.5f}, {0.5f, 0.0f, 0.5f},
+    Application(const std::string &configPath, const OfflineConfig &offline = {})
+        : offlineConfig(offline),
+          window(WIDTH, HEIGHT, "VKSRT", !offline.enabled),
+          camera({0.5f, -2.0f, 0.5f}, {0.5f, 0.0f, 0.5f},
                  (float)WIDTH / HEIGHT, 45.0f, 0.1f, 100.0f)
     {
         commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
@@ -69,6 +84,29 @@ public:
             throw std::runtime_error("failed to open config: " + configPath);
 
         json config = json::parse(file);
+
+        // Parse optional camera config
+        if (config.contains("camera"))
+        {
+            auto &cam = config["camera"];
+            if (cam.contains("pos"))
+            {
+                auto &p = cam["pos"];
+                camera.pos = {p[0].get<float>(), p[1].get<float>(), p[2].get<float>()};
+            }
+            if (cam.contains("target"))
+            {
+                auto &t = cam["target"];
+                camera.target = {t[0].get<float>(), t[1].get<float>(), t[2].get<float>()};
+            }
+            if (cam.contains("fov"))
+                camera.fov = cam["fov"].get<float>();
+
+            // Recompute direction vectors from updated pos/target
+            camera.front = glm::normalize(camera.target - camera.pos);
+            camera.right = glm::normalize(glm::cross(camera.front, Camera::worldUp));
+            camera.up = glm::normalize(glm::cross(camera.right, camera.front));
+        }
 
         passes.clear();
 
@@ -99,14 +137,103 @@ public:
 
     void run()
     {
+        if (offlineConfig.enabled)
+        {
+            runOffline();
+            return;
+        }
         while (!window.shouldClose())
         {
             window.pollEvents();
             drawFrame();
         }
         vkDeviceWaitIdle(device.getDevice());
-        // Pipeline::savePipelineCache(device, "../../build/pipeline_cache.bin");
-        // Pipeline::destroyPipelineCache(device);
+    }
+
+    void runOffline()
+    {
+        // Set blit pass to offline mode (renders to dedicated image with TRANSFER_SRC)
+        for (auto &pass : passes)
+            if (auto *blit = dynamic_cast<BlitPass *>(pass.get()))
+                blit->setOfflineMode(true);
+
+        // Create a fence for CPU-GPU sync (no swapchain semaphores)
+        VkFenceCreateInfo fenceInfo{};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        VkFence fence;
+        if (vkCreateFence(device.getDevice(), &fenceInfo, nullptr, &fence) != VK_SUCCESS)
+            throw std::runtime_error("failed to create offline fence!");
+
+        int totalSamples = offlineConfig.samples;
+        InputState dummyInput{}; // all zeros, isChanged() always false
+
+        auto startTime = std::chrono::high_resolution_clock::now();
+        PassImageSlot lastSlot{};
+
+        for (int sample = 0; sample < totalSamples; sample++)
+        {
+            // Update passes with dummy input (no camera movement)
+            for (auto &pass : passes)
+                pass->update(currentFrame, dummyInput);
+
+            // Record pass commands (no ImGui, no swapchain)
+            vkResetCommandBuffer(commandBuffers[currentFrame], 0);
+
+            VkCommandBufferBeginInfo beginInfo{};
+            beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            if (vkBeginCommandBuffer(commandBuffers[currentFrame], &beginInfo) != VK_SUCCESS)
+                throw std::runtime_error("failed to begin recording command buffer!");
+
+            lastSlot = {};
+            for (auto &pass : passes)
+                lastSlot = pass->recordCommand(commandBuffers[currentFrame], lastSlot, currentFrame, 0);
+
+            if (vkEndCommandBuffer(commandBuffers[currentFrame]) != VK_SUCCESS)
+                throw std::runtime_error("failed to record command buffer!");
+
+            // Submit with fence only — no semaphores, no present
+            VkSubmitInfo submitInfo{};
+            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submitInfo.commandBufferCount = 1;
+            submitInfo.pCommandBuffers = &commandBuffers[currentFrame];
+
+            vkResetFences(device.getDevice(), 1, &fence);
+            if (vkQueueSubmit(device.getGraphicsQueue(), 1, &submitInfo, fence) != VK_SUCCESS)
+                throw std::runtime_error("failed to submit offline command buffer!");
+            vkWaitForFences(device.getDevice(), 1, &fence, VK_TRUE, UINT64_MAX);
+
+            camera.updatePrevMatrices();
+            for (auto &pass : passes)
+                pass->endFrame();
+
+            currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+
+            // Progress output
+            auto now = std::chrono::high_resolution_clock::now();
+            float elapsed = std::chrono::duration<float>(now - startTime).count();
+            float perSample = elapsed / (sample + 1);
+            float eta = perSample * (totalSamples - sample - 1);
+            int etaMin = (int)(eta / 60.0f);
+            int etaSec = (int)eta % 60;
+            printf("\rRendering: %d/%d samples (%.1f%%) ETA: %dm%02ds   ",
+                   sample + 1, totalSamples,
+                   100.0f * (sample + 1) / totalSamples,
+                   etaMin, etaSec);
+            fflush(stdout);
+        }
+        auto endTime = std::chrono::high_resolution_clock::now();
+        float totalTime = std::chrono::duration<float>(endTime - startTime).count();
+        printf("\nRendering done: %d samples in %.2fs (%.2f samples/s)\n",
+               totalSamples, totalTime, totalSamples / totalTime);
+
+        if (lastSlot.image == VK_NULL_HANDLE)
+            throw std::runtime_error("no valid pass output for offline save!");
+
+        saveOfflineImage(lastSlot, offlineConfig.outputFilename);
+
+        vkDeviceWaitIdle(device.getDevice());
+        vkDestroyFence(device.getDevice(), fence, nullptr);
     }
 
 private:
@@ -278,23 +405,98 @@ private:
         vkDestroyBuffer(device.getDevice(), stagingBuffer, nullptr);
         vkFreeMemory(device.getDevice(), stagingBufferMemory, nullptr);
     }
+
+    void saveOfflineImage(const PassImageSlot &slot, const std::string &outputName)
+    {
+        vkDeviceWaitIdle(device.getDevice());
+
+        uint32_t width = slot.extent.width;
+        uint32_t height = slot.extent.height;
+        bool isFloat = (slot.format == VK_FORMAT_R32G32B32A32_SFLOAT);
+        uint32_t srcBytesPerPixel = isFloat ? 16 : 4;
+        VkDeviceSize bufferSize = (VkDeviceSize)width * height * srcBytesPerPixel;
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+        device.createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                            stagingBuffer, stagingBufferMemory);
+
+        // Image is already in TRANSFER_SRC_OPTIMAL (transitioned in last frame's cmd buffer)
+        VkCommandBuffer cmd = device.beginSingleTimeCommands();
+        device.copyImageToBuffer(cmd, slot.image, stagingBuffer, width, height, srcBytesPerPixel);
+        device.endSingleTimeCommands(cmd);
+
+        void *mapped;
+        vkMapMemory(device.getDevice(), stagingBufferMemory, 0, bufferSize, 0, &mapped);
+
+        std::vector<uint8_t> pixels(width * height * 4);
+
+        if (isFloat)
+        {
+            // RGBA32F -> 8-bit sRGB PNG
+            const float *src = static_cast<const float *>(mapped);
+            for (uint32_t i = 0; i < width * height; i++)
+            {
+                for (int c = 0; c < 3; c++)
+                {
+                    float v = std::max(0.0f, std::min(1.0f, src[i * 4 + c]));
+                    // Linear to sRGB
+                    if (v <= 0.0031308f)
+                        v = 12.92f * v;
+                    else
+                        v = 1.055f * std::pow(v, 1.0f / 2.4f) - 0.055f;
+                    pixels[i * 4 + c] = (uint8_t)(v * 255.0f + 0.5f);
+                }
+                pixels[i * 4 + 3] = 255;
+            }
+        }
+        else
+        {
+            memcpy(pixels.data(), mapped, width * height * 4);
+            // Handle BGRA formats
+            if (slot.format == VK_FORMAT_B8G8R8A8_SRGB || slot.format == VK_FORMAT_B8G8R8A8_UNORM)
+            {
+                for (uint32_t i = 0; i < width * height; i++)
+                    std::swap(pixels[i * 4 + 0], pixels[i * 4 + 2]);
+            }
+        }
+
+        vkUnmapMemory(device.getDevice(), stagingBufferMemory);
+
+        std::string filename = outputName + ".png";
+        stbi_write_png(filename.c_str(), width, height, 4, pixels.data(), 4 * width);
+        std::cout << "Saved: " << filename << " (" << width << "x" << height << ")" << std::endl;
+
+        vkDestroyBuffer(device.getDevice(), stagingBuffer, nullptr);
+        vkFreeMemory(device.getDevice(), stagingBufferMemory, nullptr);
+    }
 };
 
 int main(int argc, char *argv[])
 {
     std::string configPath = "../../config.json";
+    OfflineConfig offline;
+
     for (int i = 1; i < argc; i++)
     {
         std::string arg = argv[i];
         if (arg == "--config" && i + 1 < argc)
             configPath = argv[++i];
+        else if (arg == "--offline" && i + 1 < argc)
+        {
+            offline.enabled = true;
+            offline.samples = std::atoi(argv[++i]);
+        }
+        else if (arg == "--output" && i + 1 < argc)
+            offline.outputFilename = argv[++i];
         else
             configPath = arg;
     }
 
     try
     {
-        Application app(configPath);
+        Application app(configPath, offline);
         app.run();
     }
     catch (const std::exception &e)
