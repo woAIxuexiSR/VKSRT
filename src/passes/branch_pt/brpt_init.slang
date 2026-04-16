@@ -6,6 +6,7 @@ import brpt_structs;
 import wavefront_structs;
 import material;
 import rng;
+import math_utils;
 
 struct CameraProperties
 {
@@ -63,6 +64,9 @@ StructuredBuffer<uint> indices;
 StructuredBuffer<float> normalData;
 
 [[vk::binding(12)]]
+StructuredBuffer<float3x4> instanceTransforms;
+
+[[vk::binding(13)]]
 StructuredBuffer<MeshInfo> meshInfos;
 
 float3 getVertex(uint index)
@@ -158,8 +162,10 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
         float3 n1 = getNormal(i1 + mi.vertexOffset);
         float3 n2 = getNormal(i2 + mi.vertexOffset);
 
-        vtx.hitPos = bary.x * v0 + bary.y * v1 + bary.z * v2;
-        vtx.hitNormal = normalize(bary.x * n0 + bary.y * n1 + bary.z * n2);
+        float3 objPos = bary.x * v0 + bary.y * v1 + bary.z * v2;
+        float3 objN = normalize(bary.x * n0 + bary.y * n1 + bary.z * n2);
+        vtx.hitPos = transformPosition(rq.CommittedObjectToWorld3x4(), objPos);
+        vtx.hitNormal = transformNormal(rq.CommittedWorldToObject3x4(), objN);
         vtx.matIndex = mi.matIndex;
         vtx.isHit = 1;
     }

@@ -67,8 +67,8 @@ void WavefrontPTPass::init()
     // All 6 pipelines share the same descriptor layout:
     // 0: pathState, 1: rays, 2: hitInfo, 3: shadowRays, 4: counters, 5: queue,
     // 6: colorImage, 7: uniform,
-    // 8: TLAS, 9-14: vertices/indices/materials/normals/texcoords/lights, 15: meshInfo
-    // 16-18: gbuffer (normal, position, albedo)
+    // 8: TLAS, 9-14: vertices/indices/materials/normals/texcoords/lights, 15: instanceTransforms, 16: meshInfo
+    // 17-19: gbuffer (normal, position, albedo)
     std::vector<DescriptorLayoutBinding> bindings = {
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, cs},  // 0: pathState
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, cs},  // 1: rays
@@ -81,7 +81,7 @@ void WavefrontPTPass::init()
     };
     auto modelBindings = model.getDescriptorBindings(VK_SHADER_STAGE_COMPUTE_BIT, true);
     bindings.insert(bindings.end(), modelBindings.begin(), modelBindings.end());
-    // G-buffer (bindings 16-18)
+    // G-buffer (bindings 17-19)
     bindings.push_back({VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, cs});
     bindings.push_back({VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, cs});
     bindings.push_back({VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, cs});
@@ -91,12 +91,12 @@ void WavefrontPTPass::init()
             device, 1, bindings, spvPath, sizeof(WFPTPushConstants));
     };
 
-    generatePipeline = createPipeline("../shaders/wavefront_pt/wf_generate.slang.spv");
-    prepareIndirectPipeline = createPipeline("../shaders/wavefront_pt/wf_prepare_indirect.slang.spv");
-    extendPipeline = createPipeline("../shaders/wavefront_pt/wf_extend.slang.spv");
-    shadePipeline = createPipeline("../shaders/wavefront_pt/wf_shade.slang.spv");
-    shadowPipeline = createPipeline("../shaders/wavefront_pt/wf_shadow.slang.spv");
-    accumulatePipeline = createPipeline("../shaders/wavefront_pt/wf_accumulate.slang.spv");
+    generatePipeline = createPipeline("build/shaders/wavefront_pt/wf_generate.slang.spv");
+    prepareIndirectPipeline = createPipeline("build/shaders/wavefront_pt/wf_prepare_indirect.slang.spv");
+    extendPipeline = createPipeline("build/shaders/wavefront_pt/wf_extend.slang.spv");
+    shadePipeline = createPipeline("build/shaders/wavefront_pt/wf_shade.slang.spv");
+    shadowPipeline = createPipeline("build/shaders/wavefront_pt/wf_shadow.slang.spv");
+    accumulatePipeline = createPipeline("build/shaders/wavefront_pt/wf_accumulate.slang.spv");
 
     // Build descriptor infos
     std::vector<std::vector<DescriptorInfo>> infos = {

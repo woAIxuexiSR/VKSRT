@@ -48,6 +48,28 @@ public float powerHeuristic(float pdfA, float pdfB)
 }
 
 // ============================================================
+// Instance transform utilities
+// ============================================================
+
+// Transform object-space position to world space using a 3x4 row-major matrix
+public float3 transformPosition(float3x4 objectToWorld, float3 objectPos)
+{
+    return mul(objectToWorld, float4(objectPos, 1.0));
+}
+
+// Transform object-space normal to world space using inverse-transpose
+// worldToObject = inverse of objectToWorld (3x4 row-major)
+public float3 transformNormal(float3x4 worldToObject, float3 objectNormal)
+{
+    // normal transform = transpose of the 3x3 part of worldToObject
+    float3x3 normalMatrix = float3x3(
+        float3(worldToObject[0][0], worldToObject[1][0], worldToObject[2][0]),
+        float3(worldToObject[0][1], worldToObject[1][1], worldToObject[2][1]),
+        float3(worldToObject[0][2], worldToObject[1][2], worldToObject[2][2]));
+    return normalize(mul(normalMatrix, objectNormal));
+}
+
+// ============================================================
 // GGX Microfacet utilities
 // ============================================================
 

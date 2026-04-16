@@ -22,15 +22,17 @@ private:
     std::vector<glm::uvec3> indices;
     std::vector<HitSBTRecord> hitSBTRecords;
     std::vector<Material> materials;
+    std::vector<glm::mat4> instanceTransforms;
 
     std::unique_ptr<StorageBufferResource> vertexBuffer;
     std::unique_ptr<StorageBufferResource> normalBuffer;
     std::unique_ptr<StorageBufferResource> texcoordBuffer;
     std::unique_ptr<StorageBufferResource> indexBuffer;
     std::unique_ptr<StorageBufferResource> materialBuffer;
-    std::unique_ptr<StorageBufferResource> transformBuffer;
+    std::unique_ptr<StorageBufferResource> blasTransformBuffer;
     std::unique_ptr<StorageBufferResource> instanceBuffer;
     std::unique_ptr<StorageBufferResource> lightBuffer;
+    std::unique_ptr<StorageBufferResource> instanceTransformBuffer;
     std::unique_ptr<StorageBufferResource> meshInfoBuffer;
     int lightCount{0};
 
@@ -55,6 +57,7 @@ private:
     void createBLAS();
     void createTLAS();
     void buildLightBuffer();
+    void buildInstanceTransformBuffer();
     void buildMeshInfoBuffer();
 
 public:
@@ -68,7 +71,8 @@ public:
                     const std::vector<glm::uvec3> &_indices,
                     const Material &material,
                     const std::vector<glm::vec3> &_normals = {},
-                    const std::vector<glm::vec2> &_texcoords = {});
+                    const std::vector<glm::vec2> &_texcoords = {},
+                    const glm::mat4 &instanceTransform = glm::mat4(1.0f));
 
     void buildAccelerationStructures();
 

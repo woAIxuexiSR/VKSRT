@@ -58,16 +58,19 @@ StructuredBuffer<Material> materials;
 [[vk::binding(14)]]
 StructuredBuffer<LightTriangle> lights;
 
+[[vk::binding(15)]]
+StructuredBuffer<float3x4> instanceTransforms;
+
 // G-buffer
-[[vk::binding(16)]]
+[[vk::binding(17)]]
 [[vk::image_format("rgba32f")]]
 RWTexture2D<float4> gbufferNormal;
 
-[[vk::binding(17)]]
+[[vk::binding(18)]]
 [[vk::image_format("rgba32f")]]
 RWTexture2D<float4> gbufferPosition;
 
-[[vk::binding(18)]]
+[[vk::binding(19)]]
 [[vk::image_format("rgba32f")]]
 RWTexture2D<float4> gbufferAlbedo;
 
@@ -184,9 +187,10 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 
         LightTriangle lt = lights[lightIdx];
         uint3 triIdx = getTriIndices(lt.indexOffset);
-        float3 lv0 = getVertex(triIdx.x + lt.vertexOffset);
-        float3 lv1 = getVertex(triIdx.y + lt.vertexOffset);
-        float3 lv2 = getVertex(triIdx.z + lt.vertexOffset);
+        float3x4 lightXform = instanceTransforms[lt.instanceIndex];
+        float3 lv0 = transformPosition(lightXform, getVertex(triIdx.x + lt.vertexOffset));
+        float3 lv1 = transformPosition(lightXform, getVertex(triIdx.y + lt.vertexOffset));
+        float3 lv2 = transformPosition(lightXform, getVertex(triIdx.z + lt.vertexOffset));
 
         float3 lightPoint = samplePointOnTriangle(lv0, lv1, lv2, randFloat2(path.seed));
         float3 lightNormal = normalize(cross(lv1 - lv0, lv2 - lv0));

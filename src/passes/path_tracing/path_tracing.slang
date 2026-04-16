@@ -65,12 +65,15 @@ StructuredBuffer<float2> texcoords;
 StructuredBuffer<LightTriangle> lights;
 
 [[vk::binding(9)]]
-RWTexture2D<float4> gbufferNormal;
+StructuredBuffer<float3x4> instanceTransforms;
 
 [[vk::binding(10)]]
-RWTexture2D<float4> gbufferPosition;
+RWTexture2D<float4> gbufferNormal;
 
 [[vk::binding(11)]]
+RWTexture2D<float4> gbufferPosition;
+
+[[vk::binding(12)]]
 RWTexture2D<float4> gbufferAlbedo;
 
 float3 getVertex(uint index)
@@ -221,9 +224,10 @@ void raygenMain()
 
             LightTriangle lt = lights[lightIdx];
             uint3 triIdx = getTriIndices(lt.indexOffset);
-            float3 lv0 = getVertex(triIdx.x + lt.vertexOffset);
-            float3 lv1 = getVertex(triIdx.y + lt.vertexOffset);
-            float3 lv2 = getVertex(triIdx.z + lt.vertexOffset);
+            float3x4 lightXform = instanceTransforms[lt.instanceIndex];
+            float3 lv0 = transformPosition(lightXform, getVertex(triIdx.x + lt.vertexOffset));
+            float3 lv1 = transformPosition(lightXform, getVertex(triIdx.y + lt.vertexOffset));
+            float3 lv2 = transformPosition(lightXform, getVertex(triIdx.z + lt.vertexOffset));
 
             float3 lightPoint = samplePointOnTriangle(lv0, lv1, lv2, randFloat2(seed));
             float3 lightNormal = normalize(cross(lv1 - lv0, lv2 - lv0));
@@ -329,20 +333,20 @@ void closestHitMain(inout RayPayload payload, BuiltInTriangleIntersectionAttribu
     uint i1 = indices[(sbt.indexOffset + triIdx) * 3 + 1];
     uint i2 = indices[(sbt.indexOffset + triIdx) * 3 + 2];
 
-    // Interpolate position
+    // Interpolate object-space position and transform to world space
     float3 v0 = getVertex(i0 + sbt.vertexOffset);
     float3 v1 = getVertex(i1 + sbt.vertexOffset);
     float3 v2 = getVertex(i2 + sbt.vertexOffset);
-    float3 hitPos = bary.x * v0 + bary.y * v1 + bary.z * v2;
+    float3 objPos = bary.x * v0 + bary.y * v1 + bary.z * v2;
 
-    // Interpolate normal
+    // Interpolate object-space normal and transform to world space
     float3 n0 = getNormal(i0 + sbt.vertexOffset);
     float3 n1 = getNormal(i1 + sbt.vertexOffset);
     float3 n2 = getNormal(i2 + sbt.vertexOffset);
-    float3 N = normalize(bary.x * n0 + bary.y * n1 + bary.z * n2);
+    float3 objN = normalize(bary.x * n0 + bary.y * n1 + bary.z * n2);
 
     payload.isHit = 1;
-    payload.hitPos = hitPos;
-    payload.hitNormal = N;
+    payload.hitPos = transformPosition(ObjectToWorld3x4(), objPos);
+    payload.hitNormal = transformNormal(WorldToObject3x4(), objN);
     payload.matIndex = sbt.matIndex;
 }

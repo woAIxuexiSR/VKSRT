@@ -43,10 +43,10 @@ RWStructuredBuffer<BrPTVertex> vertices;
 RWStructuredBuffer<int2> depthRanges;
 
 // Debias buffers
-[[vk::binding(13)]]
+[[vk::binding(14)]]
 RWStructuredBuffer<float4> debiasDirectBuffer;
 
-[[vk::binding(14)]]
+[[vk::binding(15)]]
 RWStructuredBuffer<float4> debiasIndirectBuffer;
 
 [shader("compute")]

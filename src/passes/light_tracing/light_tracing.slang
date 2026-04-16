@@ -65,14 +65,17 @@ StructuredBuffer<float2> texcoords;
 StructuredBuffer<LightTriangle> lights;
 
 [[vk::binding(8)]]
-[[vk::image_format("r32f")]]
-RWTexture2D<float> splatR;
+StructuredBuffer<float3x4> instanceTransforms;
 
 [[vk::binding(9)]]
 [[vk::image_format("r32f")]]
-RWTexture2D<float> splatG;
+RWTexture2D<float> splatR;
 
 [[vk::binding(10)]]
+[[vk::image_format("r32f")]]
+RWTexture2D<float> splatG;
+
+[[vk::binding(11)]]
 [[vk::image_format("r32f")]]
 RWTexture2D<float> splatB;
 
@@ -156,9 +159,10 @@ void raygenMain()
 
     LightTriangle lt = lights[lightIdx];
     uint3 triIdx = getTriIndices(lt.indexOffset);
-    float3 lv0 = getVertex(triIdx.x + lt.vertexOffset);
-    float3 lv1 = getVertex(triIdx.y + lt.vertexOffset);
-    float3 lv2 = getVertex(triIdx.z + lt.vertexOffset);
+    float3x4 lightXform = instanceTransforms[lt.instanceIndex];
+    float3 lv0 = transformPosition(lightXform, getVertex(triIdx.x + lt.vertexOffset));
+    float3 lv1 = transformPosition(lightXform, getVertex(triIdx.y + lt.vertexOffset));
+    float3 lv2 = transformPosition(lightXform, getVertex(triIdx.z + lt.vertexOffset));
 
     float3 lightPos = samplePointOnTriangle(lv0, lv1, lv2, randFloat2(seed));
     float3 lightNormal = normalize(cross(lv1 - lv0, lv2 - lv0));
@@ -368,15 +372,15 @@ void closestHitMain(inout RayPayload payload, BuiltInTriangleIntersectionAttribu
     float3 v0 = getVertex(i0 + sbt.vertexOffset);
     float3 v1 = getVertex(i1 + sbt.vertexOffset);
     float3 v2 = getVertex(i2 + sbt.vertexOffset);
-    float3 hitPos = bary.x * v0 + bary.y * v1 + bary.z * v2;
+    float3 objPos = bary.x * v0 + bary.y * v1 + bary.z * v2;
 
     float3 n0 = getNormal(i0 + sbt.vertexOffset);
     float3 n1 = getNormal(i1 + sbt.vertexOffset);
     float3 n2 = getNormal(i2 + sbt.vertexOffset);
-    float3 N = normalize(bary.x * n0 + bary.y * n1 + bary.z * n2);
+    float3 objN = normalize(bary.x * n0 + bary.y * n1 + bary.z * n2);
 
     payload.isHit = 1;
-    payload.hitPos = hitPos;
-    payload.hitNormal = N;
+    payload.hitPos = transformPosition(ObjectToWorld3x4(), objPos);
+    payload.hitNormal = transformNormal(WorldToObject3x4(), objN);
     payload.matIndex = sbt.matIndex;
 }

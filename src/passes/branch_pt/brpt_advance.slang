@@ -70,10 +70,13 @@ StructuredBuffer<float> normalData;
 StructuredBuffer<LightTriangle> lights;
 
 [[vk::binding(12)]]
+StructuredBuffer<float3x4> instanceTransforms;
+
+[[vk::binding(13)]]
 StructuredBuffer<MeshInfo> meshInfos;
 
 // Debias buffers
-[[vk::binding(13)]]
+[[vk::binding(14)]]
 RWStructuredBuffer<float4> debiasDirectBuffer;
 
 float3 getVertexPos(uint index)
@@ -144,8 +147,10 @@ InlineHitResult traceRay(float3 origin, float3 dir, float tMin, float tMax)
         float3 n1 = getNormal(i1 + mi.vertexOffset);
         float3 n2 = getNormal(i2 + mi.vertexOffset);
 
-        result.hitPos = bary.x * v0 + bary.y * v1 + bary.z * v2;
-        result.hitNormal = normalize(bary.x * n0 + bary.y * n1 + bary.z * n2);
+        float3 objPos = bary.x * v0 + bary.y * v1 + bary.z * v2;
+        float3 objN = normalize(bary.x * n0 + bary.y * n1 + bary.z * n2);
+        result.hitPos = transformPosition(rq.CommittedObjectToWorld3x4(), objPos);
+        result.hitNormal = transformNormal(rq.CommittedWorldToObject3x4(), objN);
         result.matIndex = mi.matIndex;
         result.isHit = 1;
     }
@@ -335,9 +340,10 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 
             LightTriangle lt = lights[lightIdx];
             uint3 triIdx = getTriIndices(lt.indexOffset);
-            float3 lv0 = getVertexPos(triIdx.x + lt.vertexOffset);
-            float3 lv1 = getVertexPos(triIdx.y + lt.vertexOffset);
-            float3 lv2 = getVertexPos(triIdx.z + lt.vertexOffset);
+            float3x4 lightXform = instanceTransforms[lt.instanceIndex];
+            float3 lv0 = transformPosition(lightXform, getVertexPos(triIdx.x + lt.vertexOffset));
+            float3 lv1 = transformPosition(lightXform, getVertexPos(triIdx.y + lt.vertexOffset));
+            float3 lv2 = transformPosition(lightXform, getVertexPos(triIdx.z + lt.vertexOffset));
 
             float3 lightPoint = samplePointOnTriangle(lv0, lv1, lv2, randFloat2(vtx.seed));
             float3 lightNormal = normalize(cross(lv1 - lv0, lv2 - lv0));

@@ -46,4 +46,5 @@ public struct LightTriangle
     public int indexOffset;
     public int vertexOffset;
     public int matIndex;
+    public int instanceIndex;
 };

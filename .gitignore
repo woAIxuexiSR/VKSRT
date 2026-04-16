@@ -2,6 +2,7 @@
 build/
 out/
 cmake-build-*/
+imgui.ini
 
 # Compiled shaders
 *.spv

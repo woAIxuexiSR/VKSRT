@@ -31,7 +31,7 @@ void BilateralPass::init()
             {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT},
             {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT},
         },
-        "../shaders/bilateral/bilateral.slang.spv",
+        "build/shaders/bilateral/bilateral.slang.spv",
         sizeof(BilateralPushConstants));
 
     filterPipeline->updateDescriptorSets({

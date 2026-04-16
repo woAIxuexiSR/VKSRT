@@ -4,9 +4,96 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
+#include <glm/gtc/matrix_transform.hpp>
+
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
+
+// --- Material type string parsing ---
+
+static int parseMaterialType(const std::string &s)
+{
+    if (s == "lambertian") return MAT_LAMBERTIAN;
+    if (s == "metal") return MAT_METAL;
+    if (s == "dielectric") return MAT_DIELECTRIC;
+    if (s == "emissive") return MAT_EMISSIVE;
+    return -1;
+}
+
+// --- TRS matrix ---
+
+glm::mat4 SceneLoader::computeTRSMatrix(glm::vec3 translation, glm::vec3 rotationDeg, glm::vec3 scale)
+{
+    glm::mat4 T = glm::translate(glm::mat4(1.0f), translation);
+    glm::mat4 Rx = glm::rotate(glm::mat4(1.0f), glm::radians(rotationDeg.x), glm::vec3(1, 0, 0));
+    glm::mat4 Ry = glm::rotate(glm::mat4(1.0f), glm::radians(rotationDeg.y), glm::vec3(0, 1, 0));
+    glm::mat4 Rz = glm::rotate(glm::mat4(1.0f), glm::radians(rotationDeg.z), glm::vec3(0, 0, 1));
+    glm::mat4 S = glm::scale(glm::mat4(1.0f), scale);
+    return T * Rz * Ry * Rx * S;
+}
+
+// --- Material override from JSON ---
+
+void SceneLoader::applyMaterialOverride(Material &mat, const json &ov)
+{
+    if (ov.is_null() || ov.empty())
+        return;
+
+    if (ov.contains("type"))
+    {
+        int t = parseMaterialType(ov["type"].get<std::string>());
+        if (t >= 0)
+            mat.type = t;
+    }
+    if (ov.contains("roughness"))
+        mat.roughness = ov["roughness"].get<float>();
+    if (ov.contains("metallic"))
+        mat.metallic = ov["metallic"].get<float>();
+    if (ov.contains("ior"))
+        mat.ior = ov["ior"].get<float>();
+    if (ov.contains("styleType"))
+        mat.styleType = ov["styleType"].get<int>();
+    if (ov.contains("styleParam0"))
+        mat.styleParam0 = ov["styleParam0"].get<float>();
+    if (ov.contains("baseColor"))
+    {
+        auto &c = ov["baseColor"];
+        float a = c.size() > 3 ? c[3].get<float>() : 1.0f;
+        mat.baseColor = {c[0].get<float>(), c[1].get<float>(), c[2].get<float>(), a};
+    }
+    if (ov.contains("emission"))
+    {
+        auto &e = ov["emission"];
+        float a = e.size() > 3 ? e[3].get<float>() : glm::max(e[0].get<float>(), glm::max(e[1].get<float>(), e[2].get<float>()));
+        mat.emission = {e[0].get<float>(), e[1].get<float>(), e[2].get<float>(), a};
+        if (a > 0.0f)
+            mat.type = MAT_EMISSIVE;
+    }
+}
+
+// --- JSON helpers ---
+
+static glm::vec3 parseVec3(const json &j, glm::vec3 def = {0, 0, 0})
+{
+    if (j.is_array() && j.size() >= 3)
+        return {j[0].get<float>(), j[1].get<float>(), j[2].get<float>()};
+    return def;
+}
+
+static glm::vec3 parseScale(const json &j, glm::vec3 def = {1, 1, 1})
+{
+    if (j.is_number())
+    {
+        float s = j.get<float>();
+        return {s, s, s};
+    }
+    if (j.is_array() && j.size() >= 3)
+        return {j[0].get<float>(), j[1].get<float>(), j[2].get<float>()};
+    return def;
+}
+
+// --- Scene loading ---
 
 void SceneLoader::loadScene(const json &params, RayTracingModel &model)
 {
@@ -18,17 +105,24 @@ void SceneLoader::loadScene(const json &params, RayTracingModel &model)
 
     auto &scene = params["scene"];
     std::string type = scene.value("type", "cornell_box");
-    if (type == "model")
+
+    if (type == "models")
     {
-        std::string path = scene.at("path");
-        float scale = scene.value("scale", 1.0f);
-        glm::vec3 offset = {0, 0, 0};
-        if (scene.contains("offset"))
+        if (!scene.contains("models") || !scene["models"].is_array())
+            throw std::runtime_error("SceneLoader: 'models' type requires a 'models' array");
+
+        for (auto &entry : scene["models"])
         {
-            auto &o = scene["offset"];
-            offset = {o[0].get<float>(), o[1].get<float>(), o[2].get<float>()};
+            std::string path = entry.at("path").get<std::string>();
+            glm::vec3 translation = entry.contains("translation") ? parseVec3(entry["translation"]) : glm::vec3(0);
+            glm::vec3 rotation = entry.contains("rotation") ? parseVec3(entry["rotation"]) : glm::vec3(0);
+            glm::vec3 scale = entry.contains("scale") ? parseScale(entry["scale"]) : glm::vec3(1);
+
+            glm::mat4 transform = computeTRSMatrix(translation, rotation, scale);
+            json matOverride = entry.contains("material") ? entry["material"] : json{};
+
+            loadModel(path, model, transform, matOverride);
         }
-        loadModel(path, model, scale, offset);
     }
     else
     {
@@ -37,7 +131,7 @@ void SceneLoader::loadScene(const json &params, RayTracingModel &model)
 }
 
 void SceneLoader::loadModel(const std::string &path, RayTracingModel &model,
-                            float scale, glm::vec3 offset)
+                            const glm::mat4 &transform, const json &materialOverride)
 {
     Assimp::Importer importer;
     const aiScene *scene = importer.ReadFile(path,
@@ -55,13 +149,14 @@ void SceneLoader::loadModel(const std::string &path, RayTracingModel &model,
     {
         aiMesh *mesh = scene->mMeshes[m];
 
+        // Store vertices in object space (transform applied via TLAS instance)
         std::vector<glm::vec3> vertices(mesh->mNumVertices);
         std::vector<glm::vec3> normals(mesh->mNumVertices);
         std::vector<glm::vec2> texcoords(mesh->mNumVertices, glm::vec2(0.0f));
 
         for (unsigned int i = 0; i < mesh->mNumVertices; i++)
         {
-            vertices[i] = glm::vec3(mesh->mVertices[i].x, mesh->mVertices[i].y, mesh->mVertices[i].z) * scale + offset;
+            vertices[i] = glm::vec3(mesh->mVertices[i].x, mesh->mVertices[i].y, mesh->mVertices[i].z);
             normals[i] = glm::vec3(mesh->mNormals[i].x, mesh->mNormals[i].y, mesh->mNormals[i].z);
             if (mesh->mTextureCoords[0])
                 texcoords[i] = glm::vec2(mesh->mTextureCoords[0][i].x, mesh->mTextureCoords[0][i].y);
@@ -105,7 +200,8 @@ void SceneLoader::loadModel(const std::string &path, RayTracingModel &model,
                 mat.roughness = roughness;
         }
 
-        model.insertMesh(vertices, indices, mat, normals, texcoords);
+        applyMaterialOverride(mat, materialOverride);
+        model.insertMesh(vertices, indices, mat, normals, texcoords, transform);
     }
 }
 

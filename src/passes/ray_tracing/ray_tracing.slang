@@ -4,6 +4,7 @@
 import material;
 import brdf;
 import onb;
+import math_utils;
 
 [raypayload]
 struct RayPayload
@@ -166,17 +167,19 @@ void closestHitMain(inout RayPayload payload, BuiltInTriangleIntersectionAttribu
     uint i1 = indices[(sbt.indexOffset + triIdx) * 3 + 1];
     uint i2 = indices[(sbt.indexOffset + triIdx) * 3 + 2];
 
-    // Interpolate position
+    // Interpolate object-space position and transform to world space
     float3 v0 = getVertex(i0 + sbt.vertexOffset);
     float3 v1 = getVertex(i1 + sbt.vertexOffset);
     float3 v2 = getVertex(i2 + sbt.vertexOffset);
-    float3 hitPos = bary.x * v0 + bary.y * v1 + bary.z * v2;
+    float3 objPos = bary.x * v0 + bary.y * v1 + bary.z * v2;
+    float3 hitPos = transformPosition(ObjectToWorld3x4(), objPos);
 
-    // Interpolate normal
+    // Interpolate object-space normal and transform to world space
     float3 n0 = getNormal(i0 + sbt.vertexOffset);
     float3 n1 = getNormal(i1 + sbt.vertexOffset);
     float3 n2 = getNormal(i2 + sbt.vertexOffset);
-    float3 N = normalize(bary.x * n0 + bary.y * n1 + bary.z * n2);
+    float3 objN = normalize(bary.x * n0 + bary.y * n1 + bary.z * n2);
+    float3 N = transformNormal(WorldToObject3x4(), objN);
 
     // Ensure normal faces against the ray
     if (dot(N, WorldRayDirection()) > 0.0)

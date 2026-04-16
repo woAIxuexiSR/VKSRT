@@ -1,0 +1,28 @@
+{
+  "camera": {
+    "pos": [0.5, -1.5, 0.5],
+    "target": [0.5, 0.5, 0.5],
+    "fov": 60
+  },
+  "passes": [
+    {
+      "type": "wavefront_pt",
+      "params": {
+        "scene": {
+          "type": "models",
+          "models": [
+            {
+              "path": "scenes/cornell_box/cornell_box.obj",
+              "scale": 0.0018,
+              "translation": [1.0, 0, 0],
+              "rotation": [-90, 180, 0]
+            }
+          ]
+        }
+      }
+    },
+    { "type": "taa" },
+    { "type": "tonemap" },
+    { "type": "blit" }
+  ]
+}

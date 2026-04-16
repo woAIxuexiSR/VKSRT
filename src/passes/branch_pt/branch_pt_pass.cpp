@@ -146,8 +146,8 @@ void BranchPTPass::init()
 
     // Descriptor layout:
     // 0: vertices, 1: counters, 2: depthRange, 3: colorImage, 4: uniform,
-    // 5-12: model (TLAS, vertices, indices, materials, normals, texcoords, lights, meshInfo)
-    // 13: debiasDirectBuffer, 14: debiasIndirectBuffer
+    // 5-13: model (TLAS, vertices, indices, materials, normals, texcoords, lights, instanceTransforms, meshInfo)
+    // 14: debiasDirectBuffer, 15: debiasIndirectBuffer
     std::vector<DescriptorLayoutBinding> bindings = {
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, cs},  // 0: vertices
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, cs},  // 1: counters
@@ -157,7 +157,7 @@ void BranchPTPass::init()
     };
     auto modelBindings = model.getDescriptorBindings(VK_SHADER_STAGE_COMPUTE_BIT, true);
     bindings.insert(bindings.end(), modelBindings.begin(), modelBindings.end());
-    // Debias buffers (bindings 13-14)
+    // Debias buffers (bindings 14-15)
     bindings.push_back({VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, cs});
     bindings.push_back({VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, cs});
 
@@ -166,11 +166,11 @@ void BranchPTPass::init()
             device, 1, bindings, spvPath, sizeof(BrPTPushConstants));
     };
 
-    initPipeline = createPipeline("../shaders/branch_pt/brpt_init.slang.spv");
-    advancePipeline = createPipeline("../shaders/branch_pt/brpt_advance.slang.spv");
-    propagatePipeline = createPipeline("../shaders/branch_pt/brpt_propagate.slang.spv");
-    accumulatePipeline = createPipeline("../shaders/branch_pt/brpt_accumulate.slang.spv");
-    prepareIndirectPipeline = createPipeline("../shaders/branch_pt/brpt_prepare_indirect.slang.spv");
+    initPipeline = createPipeline("build/shaders/branch_pt/brpt_init.slang.spv");
+    advancePipeline = createPipeline("build/shaders/branch_pt/brpt_advance.slang.spv");
+    propagatePipeline = createPipeline("build/shaders/branch_pt/brpt_propagate.slang.spv");
+    accumulatePipeline = createPipeline("build/shaders/branch_pt/brpt_accumulate.slang.spv");
+    prepareIndirectPipeline = createPipeline("build/shaders/branch_pt/brpt_prepare_indirect.slang.spv");
 
     // Build descriptor infos
     std::vector<std::vector<DescriptorInfo>> infos = {

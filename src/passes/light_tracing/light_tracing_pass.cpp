@@ -33,7 +33,8 @@ LightTracingPass::LightTracingPass(Device &_d, SwapChain &_sc, const json &param
 void LightTracingPass::init()
 {
     // RT pipeline: TLAS(0), uniform(1), vertices(2), indices(3), materials(4),
-    //              normals(5), texcoords(6), lights(7), splatR(8), splatG(9), splatB(10)
+    //              normals(5), texcoords(6), lights(7), instanceTransforms(8),
+    //              splatR(9), splatG(10), splatB(11)
     VkShaderStageFlags hitStages = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_RAYGEN_BIT_KHR;
     std::vector<DescriptorLayoutBinding> rtBindings = {
         {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, VK_SHADER_STAGE_RAYGEN_BIT_KHR},
@@ -44,6 +45,7 @@ void LightTracingPass::init()
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, hitStages},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, hitStages},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR},
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR},
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR},
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR},
@@ -51,20 +53,20 @@ void LightTracingPass::init()
 
     rtPipeline = std::make_unique<RayTracingPipeline>(
         device, 1, rtBindings,
-        "../shaders/light_tracing/light_tracing.spv",
+        "build/shaders/light_tracing/light_tracing.spv",
         model.getHitSBTRecords(),
         "raygenMain", "missMain", "closestHitMain",
         sizeof(LTPushConstants));
 
     // Descriptor infos for RT pipeline
     auto modelInfos = model.getDescriptorInfos();
-    // modelInfos order: TLAS, vertices, indices, materials, normals, texcoords, lights
+    // modelInfos order: TLAS, vertices, indices, materials, normals, texcoords, lights, instanceTransforms
     std::vector<std::vector<DescriptorInfo>> rtInfos;
     rtInfos.push_back(modelInfos[0]); // TLAS (binding 0)
     rtInfos.push_back({VkDescriptorBufferInfo{uniformBuffer.getBuffer(), 0, sizeof(LTUniform)}}); // uniform (binding 1)
-    for (size_t i = 1; i < modelInfos.size(); i++) // vertices through lights (bindings 2-7)
+    for (size_t i = 1; i < modelInfos.size(); i++) // vertices through instanceTransforms (bindings 2-8)
         rtInfos.push_back(modelInfos[i]);
-    // splat images (bindings 8-10)
+    // splat images (bindings 9-11)
     rtInfos.push_back({VkDescriptorImageInfo{splatR.getSampler(), splatR.getImageView(), VK_IMAGE_LAYOUT_GENERAL}});
     rtInfos.push_back({VkDescriptorImageInfo{splatG.getSampler(), splatG.getImageView(), VK_IMAGE_LAYOUT_GENERAL}});
     rtInfos.push_back({VkDescriptorImageInfo{splatB.getSampler(), splatB.getImageView(), VK_IMAGE_LAYOUT_GENERAL}});
@@ -80,7 +82,7 @@ void LightTracingPass::init()
 
     composePipeline = std::make_unique<ComputePipeline>(
         device, 1, composeBindings,
-        "../shaders/light_tracing/lt_compose.slang.spv");
+        "build/shaders/light_tracing/lt_compose.slang.spv");
 
     std::vector<std::vector<DescriptorInfo>> composeInfos = {
         {VkDescriptorImageInfo{splatR.getSampler(), splatR.getImageView(), VK_IMAGE_LAYOUT_GENERAL}},

@@ -33,14 +33,14 @@ void PathTracingPass::init()
     VkShaderStageFlags hitStages = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
     auto modelBindings = model.getDescriptorBindings(hitStages);
     bindings.insert(bindings.end(), modelBindings.begin(), modelBindings.end());
-    // G-buffer: normal (binding 9), position (binding 10), albedo (binding 11)
+    // G-buffer: normal (binding 10), position (binding 11), albedo (binding 12)
     bindings.push_back({VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR});
     bindings.push_back({VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR});
     bindings.push_back({VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR});
 
     rtPipeline = std::make_unique<RayTracingPipeline>(
         device, 1, bindings,
-        "../shaders/path_tracing/path_tracing.spv",
+        "build/shaders/path_tracing/path_tracing.spv",
         model.getHitSBTRecords(),
         "raygenMain", "missMain", "closestHitMain",
         sizeof(PTPushConstants));

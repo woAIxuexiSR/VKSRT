@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <cstring>
 #include <algorithm>
 
@@ -475,7 +476,15 @@ private:
 
 int main(int argc, char *argv[])
 {
-    std::string configPath = "../../config.json";
+    // Set working directory to project root (exe is in build/Debug/ or build/Release/)
+    {
+        auto exeDir = std::filesystem::path(argv[0]).parent_path();
+        auto projectRoot = std::filesystem::weakly_canonical(exeDir / "../../");
+        std::filesystem::current_path(projectRoot);
+        std::cout << "Working directory: " << std::filesystem::current_path() << std::endl;
+    }
+
+    std::string configPath = "config.json";
     OfflineConfig offline;
 
     for (int i = 1; i < argc; i++)
