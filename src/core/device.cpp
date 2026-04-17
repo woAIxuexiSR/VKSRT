@@ -189,6 +189,7 @@ void Device::createLogicalDevice()
     VkPhysicalDeviceShaderAtomicFloatFeaturesEXT atomicFloatFeatures{};
     atomicFloatFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT;
     atomicFloatFeatures.shaderImageFloat32AtomicAdd = VK_TRUE;
+    atomicFloatFeatures.shaderBufferFloat32AtomicAdd = VK_TRUE;
     atomicFloatFeatures.pNext = &sync2Features;
 
     VkPhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeature{};
@@ -225,6 +226,7 @@ void Device::createLogicalDevice()
     deviceFeatures.samplerAnisotropy = VK_TRUE;
     deviceFeatures.shaderStorageImageReadWithoutFormat = VK_TRUE;
     deviceFeatures.shaderStorageImageWriteWithoutFormat = VK_TRUE;
+    deviceFeatures.shaderInt64 = VK_TRUE;
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;

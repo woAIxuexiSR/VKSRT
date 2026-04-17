@@ -40,7 +40,9 @@ endif()
 
 # Shared shader modules (import-only, not compiled to SPV independently)
 set(SLANG_SHARED_DIR "${CMAKE_SOURCE_DIR}/src/shaders")
+set(SLANG_NEURAL_DIR "${CMAKE_SOURCE_DIR}/src/shaders/neural")
 file(GLOB SLANG_SHARED_MODULES "${SLANG_SHARED_DIR}/*.slang")
+file(GLOB SLANG_NEURAL_MODULES "${SLANG_NEURAL_DIR}/*.slang")
 
 # RT slang shaders: multi-entry point files compiled to single SPV each
 set(RT_MULTI_ENTRY_SHADERS
@@ -87,12 +89,27 @@ foreach(SLANG ${SLANG_FILES})
     add_custom_command(
         OUTPUT ${SPIRV}
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders/${DIR_PATH}"
-        COMMAND ${SLANGC_EXECUTABLE} ${SLANG} -I${SLANG_DIR} -I${SLANG_SHARED_DIR} -profile glsl_460 -target spirv -o ${SPIRV}
-        DEPENDS ${SLANG} ${SLANG_SHARED_MODULES}
+        COMMAND ${SLANGC_EXECUTABLE} ${SLANG} -I${SLANG_DIR} -I${SLANG_SHARED_DIR} -I${SLANG_NEURAL_DIR} -profile glsl_460 -target spirv -o ${SPIRV}
+        DEPENDS ${SLANG} ${SLANG_SHARED_MODULES} ${SLANG_NEURAL_MODULES}
         COMMENT "Compiling ${FILE_NAME} to SPIR-V (slang)"
     )
 
     list(APPEND SPIRV_BINARY_FILES ${SPIRV})
+endforeach()
+
+# Neural network compute kernels (in src/shaders/neural/, not in src/passes/)
+set(NEURAL_KERNELS "adam_kernel" "train_kernel")
+foreach(NK ${NEURAL_KERNELS})
+    set(NK_SLANG "${SLANG_NEURAL_DIR}/${NK}.slang")
+    set(NK_SPV "${CMAKE_BINARY_DIR}/shaders/neural/${NK}.slang.spv")
+    add_custom_command(
+        OUTPUT ${NK_SPV}
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders/neural"
+        COMMAND ${SLANGC_EXECUTABLE} ${NK_SLANG} -I${SLANG_NEURAL_DIR} -I${SLANG_SHARED_DIR} -profile glsl_460 -target spirv -o ${NK_SPV}
+        DEPENDS ${NK_SLANG} ${SLANG_NEURAL_MODULES}
+        COMMENT "Compiling ${NK}.slang to SPIR-V"
+    )
+    list(APPEND SPIRV_BINARY_FILES ${NK_SPV})
 endforeach()
 
 add_custom_target(shaders ALL DEPENDS ${SPIRV_BINARY_FILES})
@@ -112,6 +129,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/src/passes/light_tracing
     ${CMAKE_SOURCE_DIR}/src/passes/wavefront_pt
     ${CMAKE_SOURCE_DIR}/src/passes/branch_pt
+    ${CMAKE_SOURCE_DIR}/src/passes/mlp_test
 )
 include_directories(${Stb_INCLUDE_DIR})
 
@@ -142,6 +160,7 @@ file(GLOB PASSES_FILES
     "${CMAKE_SOURCE_DIR}/src/passes/light_tracing/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/passes/wavefront_pt/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/passes/branch_pt/*.cpp"
+    "${CMAKE_SOURCE_DIR}/src/passes/mlp_test/*.cpp"
 )
 add_library(passes STATIC ${PASSES_FILES})
 target_link_libraries(passes PRIVATE

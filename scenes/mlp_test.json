@@ -1,0 +1,10 @@
+{
+  "passes": [
+    {
+      "type": "mlp_test"
+    },
+    {
+      "type": "blit"
+    }
+  ]
+}
