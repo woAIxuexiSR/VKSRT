@@ -1,4 +1,4 @@
-#include "mlp_test_pass.h"
+#include "network_test_pass.h"
 
 #include "imgui.h"
 
@@ -6,7 +6,7 @@
 #include <cmath>
 #include <vector>
 
-REGISTER_RENDER_PASS_CPP(MlpTestPass, "mlp_test");
+REGISTER_RENDER_PASS_CPP(NetworkTestPass, "network_test");
 
 struct DataGenPushConstants
 {
@@ -14,6 +14,7 @@ struct DataGenPushConstants
     uint64_t gtBuffer;
     uint32_t sampleCount;
     uint32_t seed;
+    uint32_t inputDim;
 };
 
 struct WriteImagePushConstants
@@ -25,7 +26,7 @@ struct WriteImagePushConstants
     uint32_t showGT;
 };
 
-MlpTestPass::MlpTestPass(Device &_d, SwapChain &_sc, const json &params)
+NetworkTestPass::NetworkTestPass(Device &_d, SwapChain &_sc, const json &params)
     : PassBase(_d, _sc),
       outputImage{_d, VK_FORMAT_R8G8B8A8_UNORM, VkExtent2D{256, 256},
                   VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT}
@@ -49,10 +50,22 @@ MlpTestPass::MlpTestPass(Device &_d, SwapChain &_sc, const json &params)
     {
         const auto &net = params["network"];
 
-        if (net.contains("encoding"))
+        // New multi-encoding mode: "encoding" is an array
+        if (net.contains("encoding") && net["encoding"].is_array())
+        {
+            for (auto &enc : net["encoding"])
+            {
+                NeuralNetwork::EncodingConfig ec;
+                ec.type = enc["type"].get<std::string>();
+                ec.inputDim = enc["inputDim"].get<int>();
+                ec.params = enc;
+                netCfg.encodings.push_back(ec);
+            }
+        }
+        // Legacy single-encoding mode: "encoding" is an object
+        else if (net.contains("encoding") && net["encoding"].is_object())
         {
             const auto &enc = net["encoding"];
-            useEncoding = true;
             netCfg.useEncoding = true;
             if (enc.contains("numLevels"))          netCfg.encoding.numLevels = enc["numLevels"].get<int>();
             if (enc.contains("featuresPerLevel"))   netCfg.encoding.featuresPerLevel = enc["featuresPerLevel"].get<int>();
@@ -66,26 +79,63 @@ MlpTestPass::MlpTestPass(Device &_d, SwapChain &_sc, const json &params)
         if (net.contains("mlp"))
         {
             const auto &mlp = net["mlp"];
-            if (!useEncoding && mlp.contains("inputSize")) mlpInputSize = mlp["inputSize"].get<int>();
-            if (mlp.contains("outputSize"))                mlpOutputSize = mlp["outputSize"].get<int>();
-            if (mlp.contains("hiddenSize"))                hiddenSize = mlp["hiddenSize"].get<int>();
-            if (mlp.contains("hiddenLayers"))              hiddenLayers = mlp["hiddenLayers"].get<int>();
-        }
-        else
-        {
-            if (!useEncoding && net.contains("inputSize"))    mlpInputSize = net["inputSize"].get<int>();
-            if (net.contains("outputSize"))                   mlpOutputSize = net["outputSize"].get<int>();
-            if (net.contains("hiddenSize"))                   hiddenSize = net["hiddenSize"].get<int>();
-            if (net.contains("hiddenLayers"))                 hiddenLayers = net["hiddenLayers"].get<int>();
+            if (mlp.contains("outputSize"))   mlpOutputSize = mlp["outputSize"].get<int>();
+            if (mlp.contains("hiddenSize"))   hiddenSize = mlp["hiddenSize"].get<int>();
+            if (mlp.contains("hiddenLayers")) hiddenLayers = mlp["hiddenLayers"].get<int>();
+            if (!netCfg.useEncoding && netCfg.encodings.empty() && mlp.contains("inputSize"))
+                mlpInputSize = mlp["inputSize"].get<int>();
         }
     }
 
-    assert(mlpOutputSize == 3 && "mlp_test requires outputSize == 3");
-    if (useEncoding)
-        assert(netCfg.encoding.inputDim == 2 && "mlp_test hash encoding requires inputDim == 2");
-    else
-        assert(mlpInputSize == 2 && "mlp_test (no encoding) requires inputSize == 2");
+    assert(mlpOutputSize == 3 && "network_test requires outputSize == 3");
     assert(hiddenSize == 64 && "hiddenSize must be 64");
+
+    // For multi-encoding, compute mlpInputSize from encoding output dims
+    if (!netCfg.encodings.empty())
+    {
+        mlpInputSize = 0;
+        totalRawInputDim = 0;
+        for (auto &ec : netCfg.encodings)
+            totalRawInputDim += ec.inputDim;
+        for (auto &ec : netCfg.encodings)
+        {
+            if (ec.type == "identity")
+                mlpInputSize += ec.inputDim;
+            else if (ec.type == "hashgrid")
+            {
+                int numLevels = 16, featuresPerLevel = 2;
+                if (ec.params.contains("numLevels")) numLevels = ec.params["numLevels"].get<int>();
+                if (ec.params.contains("featuresPerLevel")) featuresPerLevel = ec.params["featuresPerLevel"].get<int>();
+                mlpInputSize += numLevels * featuresPerLevel;
+            }
+            else if (ec.type == "sh")
+            {
+                int degree = 4;
+                if (ec.params.contains("degree")) degree = ec.params["degree"].get<int>();
+                mlpInputSize += (degree + 1) * (degree + 1);
+            }
+            else if (ec.type == "frequency")
+            {
+                int numFreqs = 6;
+                if (ec.params.contains("numFreqs")) numFreqs = ec.params["numFreqs"].get<int>();
+                mlpInputSize += ec.inputDim * numFreqs * 2;
+            }
+            else if (ec.type == "oneblob")
+            {
+                int numBins = 16;
+                if (ec.params.contains("numBins")) numBins = ec.params["numBins"].get<int>();
+                mlpInputSize += ec.inputDim * numBins;
+            }
+        }
+    }
+    else if (netCfg.useEncoding)
+    {
+        totalRawInputDim = netCfg.encoding.inputDim;
+    }
+    else
+    {
+        totalRawInputDim = mlpInputSize;
+    }
 
     netCfg.layers.push_back({mlpInputSize, hiddenSize});
     for (int i = 0; i < hiddenLayers; i++)
@@ -95,11 +145,10 @@ MlpTestPass::MlpTestPass(Device &_d, SwapChain &_sc, const json &params)
     network = std::make_unique<NeuralNetwork>(device, netCfg);
     network->initWeights(42);
 
-    int rawInputDim = 2;
     int outDim = mlpOutputSize;
 
     inputBuffer = std::make_unique<StorageBufferResource>(
-        device, (VkDeviceSize)maxBatchSize * rawInputDim * sizeof(float),
+        device, (VkDeviceSize)maxBatchSize * totalRawInputDim * sizeof(float),
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
 
@@ -112,19 +161,25 @@ MlpTestPass::MlpTestPass(Device &_d, SwapChain &_sc, const json &params)
     uint32_t pixelCount = extent.width * extent.height;
 
     inferenceInputBuffer = std::make_unique<StorageBufferResource>(
-        device, (VkDeviceSize)pixelCount * rawInputDim * sizeof(float),
+        device, (VkDeviceSize)pixelCount * totalRawInputDim * sizeof(float),
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
             VK_BUFFER_USAGE_TRANSFER_DST_BIT |
             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
 
-    std::vector<float> gridCoords(pixelCount * rawInputDim);
+    std::vector<float> gridCoords(pixelCount * totalRawInputDim, 0.0f);
     for (uint32_t y = 0; y < extent.height; y++)
     {
         for (uint32_t x = 0; x < extent.width; x++)
         {
-            uint32_t idx = (y * extent.width + x) * rawInputDim;
-            gridCoords[idx + 0] = ((float)x + 0.5f) / (float)extent.width;
-            gridCoords[idx + 1] = ((float)y + 0.5f) / (float)extent.height;
+            uint32_t idx = (y * extent.width + x) * totalRawInputDim;
+            float u = ((float)x + 0.5f) / (float)extent.width;
+            float v = ((float)y + 0.5f) / (float)extent.height;
+            for (int f = 0; f < totalRawInputDim; f += 2)
+            {
+                gridCoords[idx + f + 0] = u;
+                if (f + 1 < totalRawInputDim)
+                    gridCoords[idx + f + 1] = v;
+            }
         }
     }
     inferenceInputBuffer->update(gridCoords.data());
@@ -135,7 +190,7 @@ MlpTestPass::MlpTestPass(Device &_d, SwapChain &_sc, const json &params)
             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
 }
 
-uint64_t MlpTestPass::getBufferDeviceAddress(VkBuffer buffer)
+uint64_t NetworkTestPass::getBufferDeviceAddress(VkBuffer buffer)
 {
     VkBufferDeviceAddressInfoKHR info{};
     info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_KHR;
@@ -143,13 +198,13 @@ uint64_t MlpTestPass::getBufferDeviceAddress(VkBuffer buffer)
     return vkGetBufferDeviceAddressKHR(device.getDevice(), &info);
 }
 
-void MlpTestPass::init()
+void NetworkTestPass::init()
 {
     std::vector<DescriptorLayoutBinding> emptyBindings{};
 
     dataGenPipeline = std::make_unique<ComputePipeline>(
         device, 1, emptyBindings,
-        "build/shaders/mlp_test/mlp_data_gen.slang.spv",
+        "build/shaders/network_test/mlp_data_gen.slang.spv",
         sizeof(DataGenPushConstants));
 
     writeImagePipeline = std::make_unique<ComputePipeline>(
@@ -157,7 +212,7 @@ void MlpTestPass::init()
         std::vector<DescriptorLayoutBinding>{
             {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT},
         },
-        "build/shaders/mlp_test/write_image.slang.spv",
+        "build/shaders/network_test/write_image.slang.spv",
         sizeof(WriteImagePushConstants));
 
     writeImagePipeline->updateDescriptorSets({
@@ -167,7 +222,7 @@ void MlpTestPass::init()
     network->createPipelines();
 }
 
-void MlpTestPass::update(uint32_t currentFrame, InputState &inputState)
+void NetworkTestPass::update(uint32_t currentFrame, InputState &inputState)
 {
     if (!enabled)
         return;
@@ -175,7 +230,7 @@ void MlpTestPass::update(uint32_t currentFrame, InputState &inputState)
     frameIndex++;
 }
 
-void MlpTestPass::drawUI()
+void NetworkTestPass::drawUI()
 {
     ImGui::Checkbox("Train", &trainEnabled);
     ImGui::Text("Batch Size: %d", batchSize);
@@ -189,10 +244,11 @@ void MlpTestPass::drawUI()
     ImGui::Text("Loss: %.6f", currentLoss);
     ImGui::Text("Frame: %u", frameIndex);
     ImGui::Text("Params: %d", network->getTotalParams());
-    ImGui::Text("Encoding: %s", useEncoding ? "HashGrid" : "None");
+    if (network->hasEncodings())
+        ImGui::Text("Encodings: %d", (int)network->getTotalEncodedDim());
 }
 
-PassImageSlot MlpTestPass::recordCommand(VkCommandBuffer cmd,
+PassImageSlot NetworkTestPass::recordCommand(VkCommandBuffer cmd,
                                           const PassImageSlot &inputSlot,
                                           uint32_t currentFrame, uint32_t imageIndex)
 {
@@ -215,6 +271,7 @@ PassImageSlot MlpTestPass::recordCommand(VkCommandBuffer cmd,
             pc.gtBuffer = getBufferDeviceAddress(gtBuffer->getBuffer());
             pc.sampleCount = (uint32_t)batchSize;
             pc.seed = frameIndex * maxBatchSize;
+            pc.inputDim = (uint32_t)totalRawInputDim;
 
             dataGenPipeline->bindPipeline(cmd);
             dataGenPipeline->pushConstants(cmd, &pc);
@@ -270,7 +327,7 @@ PassImageSlot MlpTestPass::recordCommand(VkCommandBuffer cmd,
     return getOutputSlot();
 }
 
-PassImageSlot MlpTestPass::getOutputSlot() const
+PassImageSlot NetworkTestPass::getOutputSlot() const
 {
     return {
         outputImage.getImage(),

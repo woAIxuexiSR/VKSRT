@@ -7,28 +7,25 @@
 
 #include <memory>
 
-class MlpTestPass : public PassBase
+class NetworkTestPass : public PassBase
 {
-    REGISTER_RENDER_PASS(MlpTestPass);
+    REGISTER_RENDER_PASS(NetworkTestPass);
 
 private:
     std::unique_ptr<NeuralNetwork> network;
 
     ImageResource outputImage;
 
-    // Training buffers (random samples)
     std::unique_ptr<StorageBufferResource> inputBuffer;
     std::unique_ptr<StorageBufferResource> gtBuffer;
 
-    // Inference buffers (pixel grid)
     std::unique_ptr<StorageBufferResource> inferenceInputBuffer;
     std::unique_ptr<StorageBufferResource> inferenceOutputBuffer;
 
     std::unique_ptr<ComputePipeline> dataGenPipeline;
     std::unique_ptr<ComputePipeline> writeImagePipeline;
 
-    bool useEncoding{false};
-
+    int totalRawInputDim{2};
     int batchSize{256};
     int maxBatchSize{4096};
     bool showGT{false};
@@ -40,9 +37,9 @@ private:
     uint64_t getBufferDeviceAddress(VkBuffer buffer);
 
 public:
-    MlpTestPass(Device &_d, SwapChain &_sc, const json &params);
+    NetworkTestPass(Device &_d, SwapChain &_sc, const json &params);
 
-    std::string getName() const override { return "MLP Test"; }
+    std::string getName() const override { return "Network Test"; }
     bool canDisable() const override { return true; }
     PassImageSlot getOutputSlot() const override;
 

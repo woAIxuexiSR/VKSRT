@@ -1,13 +1,11 @@
-// HashGrid forward kernel: raw input coords → encoded features buffer.
-// Each thread processes one sample.
 import mlvec;
 import hashgrid;
 
 struct HashGridForwardPushConstants
 {
-    uint64_t inputBuffer;        // float[sampleCount * inputDim]
-    uint64_t outputBuffer;       // float[sampleCount * encodedDim]
-    uint64_t hashTable;          // NFloat[numLevels * tableSize * featuresPerLevel]
+    uint64_t inputBuffer;
+    uint64_t outputBuffer;
+    uint64_t hashTable;
     uint sampleCount;
     uint inputDim;
     uint numLevels;
@@ -15,6 +13,10 @@ struct HashGridForwardPushConstants
     uint tableSize;
     float coarsestResolution;
     float perLevelScale;
+    uint inputFieldOffset;
+    uint inputStride;
+    uint outputFieldOffset;
+    uint outputStride;
 };
 
 [[vk::push_constant]]
@@ -39,17 +41,14 @@ void main(uint tid : SV_DispatchThreadID)
     hp.coarsestResolution = pc.coarsestResolution;
     hp.perLevelScale = pc.perLevelScale;
 
-    // Load raw coord
     MLVec coord = MLVec.zero();
     for (uint j = 0; j < pc.inputDim; j++)
-        coord.data[j] = NFloat(inputs[tid * pc.inputDim + j]);
+        coord.data[j] = NFloat(inputs[tid * pc.inputStride + pc.inputFieldOffset + j]);
 
-    // Encode
     MLVec encoded = MLVec.zero();
     encodeForward(coord, table, hp, encoded);
 
-    // Write encoded features
     uint encodedDim = pc.numLevels * pc.featuresPerLevel;
     for (uint j = 0; j < encodedDim; j++)
-        outputs[tid * encodedDim + j] = float(encoded.data[j]);
+        outputs[tid * pc.outputStride + pc.outputFieldOffset + j] = float(encoded.data[j]);
 }

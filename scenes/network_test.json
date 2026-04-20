@@ -1,0 +1,26 @@
+{
+  "passes": [
+    {
+      "type": "network_test",
+      "params": {
+        "batchSize": 256,
+        "showGT": false,
+        "network": {
+          "encoding": [
+            { "type": "hashgrid", "inputDim": 2, "numLevels": 4, "featuresPerLevel": 2, "tableSize": 16384, "coarsestResolution": 8, "finestResolution": 128 },
+            { "type": "oneblob", "inputDim": 2, "numBins": 4 },
+            { "type": "frequency", "inputDim": 2, "numFreqs": 3 }
+          ],
+          "mlp": {
+            "outputSize": 3,
+            "hiddenSize": 64,
+            "hiddenLayers": 2
+          }
+        }
+      }
+    },
+    {
+      "type": "blit"
+    }
+  ]
+}

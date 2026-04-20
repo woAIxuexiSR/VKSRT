@@ -59,11 +59,25 @@ src/
 │   │   ├── wf_shade.slang
 │   │   ├── wf_shadow.slang
 │   │   └── wf_accumulate.slang
-│   └── branch_pt/        # Branch PT（树状路径分叉 + stylized rendering）
-│       ├── branch_pt_pass.h/cpp
-│       ├── brpt_advance.slang
-│       ├── brpt_propagate.slang
-│       └── brpt_accumulate.slang
+│   ├── branch_pt/        # Branch PT（树状路径分叉 + stylized rendering）
+│   │   ├── branch_pt_pass.h/cpp
+│   │   ├── brpt_advance.slang
+│   │   ├── brpt_propagate.slang
+│   │   └── brpt_accumulate.slang
+│   └── network_test/     # 神经网络训练/推理可视化测试（多 encoding 拼接 + MLP）
+│       ├── network_test_pass.h/cpp
+│       ├── mlp_data_gen.slang
+│       └── write_image.slang
+├── neural/         # 模块化神经网络（GPU compute shader 训练/推理）
+│   ├── encoding.h             # Encoding 抽象基类（strided forward/backward）
+│   ├── encoding_factory.h/cpp # createEncoding() 工厂函数
+│   ├── hash_grid_encoding.h/cpp   # 多分辨率哈希网格编码 (trainable)
+│   ├── frequency_encoding.h/cpp   # NeRF 位置编码 sin/cos
+│   ├── sh_encoding.h/cpp          # 球谐基函数编码
+│   ├── oneblob_encoding.h/cpp     # 高斯 blob 编码
+│   ├── identity_encoding.h/cpp    # 直通编码
+│   ├── mlp.h/cpp              # MLP forward/backward/Adam pipeline
+│   └── neural_network.h/cpp   # 编排器：Encoding[] + MLP + concat buffer + dispatch 链
 ├── scene/          # 场景管理
 │   ├── camera.h/cpp           # 从 EasyVulkan model/camera 移植，含 prevViewProj
 │   ├── gbuffer.h              # App 管理的 G-buffer（position/normal/albedo）
@@ -133,6 +147,15 @@ passes 编译为独立静态库，链接到 main。
 - [x] GGX microfacet BRDF（Metal GGX VNDF + Lambertian diffuse+specular）
 - [x] 离线渲染模式（--offline + PNG 输出）
 - [x] 材质类型封装（isDeltaBRDF/isEmissive/canTransmit）
+
+### M8: GPU 神经网络基础设施 [进行中]
+- [x] Pure MLP forward/backward/Adam（Slang compute shader，手写反向）
+- [x] HashGrid encoding（多分辨率哈希网格，trainable，InterlockedAdd 梯度）
+- [x] 多 Encoding 架构（Encoding 基类 + 工厂模式，strided concat buffer）
+- [x] 5 种 Encoding：HashGrid / Frequency / SH / OneBlob / Identity
+- [x] NeuralNetwork 编排器（多 encoding forward → MLP → backward → Adam）
+- [x] network_test pass（可视化训练/推理，多 encoding 拼接验证）
+- [ ] Neural Radiance Cache（NRC，嵌入 path tracing）
 
 ## Build Commands
 ```bash

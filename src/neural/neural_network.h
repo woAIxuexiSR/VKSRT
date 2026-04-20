@@ -3,22 +3,31 @@
 #include "device.h"
 #include "resource.h"
 #include "mlp.h"
+#include "encoding.h"
+#include "encoding_factory.h"
 #include "hash_grid_encoding.h"
 
 #include <vector>
 #include <memory>
 #include <cstdint>
 
-// Orchestrator: owns an MLP + optional HashGridEncoding, manages intermediate
-// buffers, and records forward/train dispatch chains.
 class NeuralNetwork
 {
 public:
     using LayerConfig = MLP::LayerConfig;
 
+    struct EncodingConfig
+    {
+        std::string type;
+        int inputDim;
+        json params;
+    };
+
     struct Config
     {
         std::vector<LayerConfig> layers;
+        std::vector<EncodingConfig> encodings;
+        // Legacy single-encoding mode:
         bool useEncoding{false};
         HashGridEncoding::Config encoding{};
     };
@@ -33,16 +42,11 @@ public:
     void initWeights(unsigned int seed = 42);
     void createPipelines();
 
-    // Pre-allocate intermediate buffers for at least sampleCount samples.
-    // Call before recordForward/recordTrain if multiple calls per frame use different counts.
     void ensureBuffers(uint32_t sampleCount);
 
-    // Record full forward chain: [hashgrid_forward →] mlp_forward.
-    // Writes MLP output to outputBuffer.
     void recordForward(VkCommandBuffer cmd, VkBuffer inputBuffer,
                        VkBuffer outputBuffer, uint32_t sampleCount);
 
-    // Record full training step: forward → loss → backward → adam → copy loss.
     void recordTrain(VkCommandBuffer cmd, VkBuffer inputBuffer,
                      VkBuffer gtBuffer, uint32_t sampleCount);
 
@@ -51,23 +55,27 @@ public:
     int getTotalParams() const;
     int getInputSize() const;
     int getOutputSize() const;
-    bool hasEncoding() const { return hashGrid != nullptr; }
+    int getTotalEncodedDim() const { return totalEncodedDim; }
+    int getTotalRawInputDim() const { return totalRawInputDim; }
+    bool hasEncodings() const { return !encodings.empty(); }
 
 private:
     Device &device;
     std::unique_ptr<MLP> mlp;
-    std::unique_ptr<HashGridEncoding> hashGrid;
+    std::vector<std::unique_ptr<Encoding>> encodings;
+    std::vector<uint32_t> inputFieldOffsets;
+    std::vector<uint32_t> outputFieldOffsets;
+    uint32_t totalRawInputDim{0};
+    uint32_t totalEncodedDim{0};
 
     uint32_t lastSampleCount{1};
     uint32_t maxSampleCount{0};
 
-    // Intermediate buffers (sized to maxSampleCount on first use)
-    std::unique_ptr<StorageBufferResource> encodedBuffer;
+    std::unique_ptr<StorageBufferResource> concatBuffer;
     std::unique_ptr<StorageBufferResource> activationsBuffer;
     std::unique_ptr<StorageBufferResource> mlpOutputBuffer;
     std::unique_ptr<StorageBufferResource> dInputBuffer;
 
-    // Loss tracking
     std::unique_ptr<StorageBufferResource> lossGpuBuffer;
     VkBuffer lossReadbackBuffer{VK_NULL_HANDLE};
     VkDeviceMemory lossReadbackMemory{VK_NULL_HANDLE};

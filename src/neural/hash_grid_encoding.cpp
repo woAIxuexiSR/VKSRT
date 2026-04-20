@@ -4,7 +4,6 @@
 #include <cmath>
 #include <stdexcept>
 
-// Push constants matching hashgrid_forward.slang
 struct HashGridForwardPushConstants
 {
     uint64_t inputBuffer;
@@ -17,9 +16,12 @@ struct HashGridForwardPushConstants
     uint32_t tableSize;
     float    coarsestResolution;
     float    perLevelScale;
+    uint32_t inputFieldOffset;
+    uint32_t inputStride;
+    uint32_t outputFieldOffset;
+    uint32_t outputStride;
 };
 
-// Push constants matching hashgrid_backward.slang
 struct HashGridBackwardPushConstants
 {
     uint64_t dEncodedBuffer;
@@ -32,6 +34,10 @@ struct HashGridBackwardPushConstants
     uint32_t tableSize;
     float    coarsestResolution;
     float    perLevelScale;
+    uint32_t dEncodedFieldOffset;
+    uint32_t dEncodedStride;
+    uint32_t inputFieldOffset;
+    uint32_t inputStride;
 };
 
 struct AdamPushConstants
@@ -99,7 +105,7 @@ uint64_t HashGridEncoding::getBufferDeviceAddress(VkBuffer buffer)
     return vkGetBufferDeviceAddressKHR(device.getDevice(), &info);
 }
 
-void HashGridEncoding::initTable(unsigned int seed)
+void HashGridEncoding::initParams(unsigned int seed)
 {
     std::mt19937 rng(seed);
     std::uniform_real_distribution<float> dist(-1e-4f, 1e-4f);
@@ -139,8 +145,10 @@ void HashGridEncoding::createPipelines()
         sizeof(AdamPushConstants));
 }
 
-void HashGridEncoding::recordForward(VkCommandBuffer cmd, VkBuffer rawInput,
-                                     VkBuffer encodedOutput, uint32_t sampleCount)
+void HashGridEncoding::recordForward(VkCommandBuffer cmd,
+                                     VkBuffer rawInput, uint32_t inputOffset, uint32_t inputStride,
+                                     VkBuffer encodedOutput, uint32_t outputOffset, uint32_t outputStride,
+                                     uint32_t sampleCount)
 {
     HashGridForwardPushConstants pc{};
     pc.inputBuffer = getBufferDeviceAddress(rawInput);
@@ -153,14 +161,20 @@ void HashGridEncoding::recordForward(VkCommandBuffer cmd, VkBuffer rawInput,
     pc.tableSize = (uint32_t)config.tableSize;
     pc.coarsestResolution = (float)config.coarsestResolution;
     pc.perLevelScale = perLevelScale;
+    pc.inputFieldOffset = inputOffset;
+    pc.inputStride = inputStride;
+    pc.outputFieldOffset = outputOffset;
+    pc.outputStride = outputStride;
 
     forwardPipeline->bindPipeline(cmd);
     forwardPipeline->pushConstants(cmd, &pc);
     vkCmdDispatch(cmd, (sampleCount + 255) / 256, 1, 1);
 }
 
-void HashGridEncoding::recordBackward(VkCommandBuffer cmd, VkBuffer dEncoded,
-                                      VkBuffer rawInput, uint32_t sampleCount)
+void HashGridEncoding::recordBackward(VkCommandBuffer cmd,
+                                      VkBuffer dEncoded, uint32_t dOffset, uint32_t dStride,
+                                      VkBuffer rawInput, uint32_t inputOffset, uint32_t inputStride,
+                                      uint32_t sampleCount)
 {
     HashGridBackwardPushConstants pc{};
     pc.dEncodedBuffer = getBufferDeviceAddress(dEncoded);
@@ -173,6 +187,10 @@ void HashGridEncoding::recordBackward(VkCommandBuffer cmd, VkBuffer dEncoded,
     pc.tableSize = (uint32_t)config.tableSize;
     pc.coarsestResolution = (float)config.coarsestResolution;
     pc.perLevelScale = perLevelScale;
+    pc.dEncodedFieldOffset = dOffset;
+    pc.dEncodedStride = dStride;
+    pc.inputFieldOffset = inputOffset;
+    pc.inputStride = inputStride;
 
     backwardPipeline->bindPipeline(cmd);
     backwardPipeline->pushConstants(cmd, &pc);

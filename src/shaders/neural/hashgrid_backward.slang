@@ -1,13 +1,11 @@
-// HashGrid backward kernel: dEncoded + raw input → atomic splat to table grad.
-// Each thread processes one sample.
 import mlvec;
 import hashgrid;
 
 struct HashGridBackwardPushConstants
 {
-    uint64_t dEncodedBuffer;     // float[sampleCount * encodedDim] (gradient from MLP)
-    uint64_t inputBuffer;        // float[sampleCount * inputDim] (raw coords, for rehashing)
-    uint64_t hashTableGrad;      // Atomic<NFloat>[numLevels * tableSize * featuresPerLevel]
+    uint64_t dEncodedBuffer;
+    uint64_t inputBuffer;
+    uint64_t hashTableGrad;
     uint sampleCount;
     uint inputDim;
     uint numLevels;
@@ -15,6 +13,10 @@ struct HashGridBackwardPushConstants
     uint tableSize;
     float coarsestResolution;
     float perLevelScale;
+    uint dEncodedFieldOffset;
+    uint dEncodedStride;
+    uint inputFieldOffset;
+    uint inputStride;
 };
 
 [[vk::push_constant]]
@@ -39,17 +41,14 @@ void main(uint tid : SV_DispatchThreadID)
     hp.coarsestResolution = pc.coarsestResolution;
     hp.perLevelScale = pc.perLevelScale;
 
-    // Load raw coord
     MLVec coord = MLVec.zero();
     for (uint j = 0; j < pc.inputDim; j++)
-        coord.data[j] = NFloat(inputs[tid * pc.inputDim + j]);
+        coord.data[j] = NFloat(inputs[tid * pc.inputStride + pc.inputFieldOffset + j]);
 
-    // Load dEncoded
     uint encodedDim = pc.numLevels * pc.featuresPerLevel;
     MLVec gradOutput = MLVec.zero();
     for (uint j = 0; j < encodedDim; j++)
-        gradOutput.data[j] = NFloat(dEncoded[tid * encodedDim + j]);
+        gradOutput.data[j] = NFloat(dEncoded[tid * pc.dEncodedStride + pc.dEncodedFieldOffset + j]);
 
-    // Splat gradients
     encodeBackward(gradOutput, coord, tableGrad, hp);
 }

@@ -1,16 +1,11 @@
 #pragma once
 
-#include "device.h"
-#include "resource.h"
-#include "pipeline.h"
+#include "encoding.h"
 
 #include <memory>
 #include <cstdint>
 
-// Multi-resolution hash grid encoding (NRC-style).
-// Owns hash table + gradient buffers, forward/backward compute pipelines,
-// and Adam optimizer state.
-class HashGridEncoding
+class HashGridEncoding : public Encoding
 {
 public:
     struct Config
@@ -29,25 +24,28 @@ public:
     HashGridEncoding(const HashGridEncoding &) = delete;
     HashGridEncoding &operator=(const HashGridEncoding &) = delete;
 
-    void initTable(unsigned int seed = 1337);
-    void createPipelines();
+    int getInputDim() const override { return config.inputDim; }
+    int getOutputDim() const override { return config.numLevels * config.featuresPerLevel; }
+    bool hasTrainableParams() const override { return true; }
+    int getTrainableParamCount() const override { return getTotalFeatures(); }
+    std::string typeName() const override { return "hashgrid"; }
 
-    // Record forward: rawInput → encodedOutput.
-    void recordForward(VkCommandBuffer cmd, VkBuffer rawInput, VkBuffer encodedOutput,
-                       uint32_t sampleCount);
+    void createPipelines() override;
+    void initParams(unsigned int seed) override;
+    void resetAdamState() override;
 
-    // Record backward: dEncoded + rawInput → splat gradients to tableGrad.
-    void recordBackward(VkCommandBuffer cmd, VkBuffer dEncoded, VkBuffer rawInput,
-                        uint32_t sampleCount);
+    void recordForward(VkCommandBuffer cmd,
+                       VkBuffer rawInput, uint32_t inputOffset, uint32_t inputStride,
+                       VkBuffer encodedOutput, uint32_t outputOffset, uint32_t outputStride,
+                       uint32_t sampleCount) override;
 
-    // Record zero-fill of table gradient buffer.
-    void recordZeroGrads(VkCommandBuffer cmd);
+    void recordBackward(VkCommandBuffer cmd,
+                        VkBuffer dEncoded, uint32_t dOffset, uint32_t dStride,
+                        VkBuffer rawInput, uint32_t inputOffset, uint32_t inputStride,
+                        uint32_t sampleCount) override;
 
-    // Record Adam optimizer step on hash table parameters.
-    void recordAdam(VkCommandBuffer cmd);
-
-    // Reset Adam state (call once after initTable).
-    void resetAdamState();
+    void recordZeroGrads(VkCommandBuffer cmd) override;
+    void recordAdam(VkCommandBuffer cmd) override;
 
     const Config &getConfig() const { return config; }
     int getEncodedDim() const { return config.numLevels * config.featuresPerLevel; }
@@ -56,9 +54,6 @@ public:
 
     VkBuffer getTableBuffer() const { return tableBuffer->getBuffer(); }
     VkBuffer getTableGradBuffer() const { return tableGradBuffer->getBuffer(); }
-    uint64_t getTableBufferAddress() const { return tableAddr; }
-    uint64_t getTableGradBufferAddress() const { return tableGradAddr; }
-    VkDeviceSize getTableBufferSize() const { return tableBufferSize; }
 
 private:
     Device &device;
@@ -71,10 +66,8 @@ private:
     uint64_t tableGradAddr{0};
     VkDeviceSize tableBufferSize{0};
 
-    // Adam optimizer state
     std::unique_ptr<StorageBufferResource> adamState;
 
-    // Compute pipelines
     std::unique_ptr<ComputePipeline> forwardPipeline;
     std::unique_ptr<ComputePipeline> backwardPipeline;
     std::unique_ptr<ComputePipeline> adamPipeline;

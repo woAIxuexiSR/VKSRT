@@ -1,18 +1,16 @@
-// GPU data generation kernel for MLP test: random (x,y) -> gt = (sin(pi*x), cos(pi*y), x*y)
 import rng;
 
 struct DataGenPushConstants
 {
-    uint64_t inputBuffer;   // float[sampleCount * 2]
-    uint64_t gtBuffer;      // float[sampleCount * 3]
+    uint64_t inputBuffer;
+    uint64_t gtBuffer;
     uint   sampleCount;
     uint   seed;
+    uint   inputDim;
 };
 
 [[vk::push_constant]]
 DataGenPushConstants pc;
-
-static const float PI = 3.14159265358979323846;
 
 [numthreads(256, 1, 1)]
 [shader("compute")]
@@ -28,10 +26,15 @@ void main(uint tid : SV_DispatchThreadID)
     float x = randFloat(rngState);
     float y = randFloat(rngState);
 
-    inputs[tid * 2 + 0] = x;
-    inputs[tid * 2 + 1] = y;
+    // Fill all input fields with the same (x, y) pair
+    for (uint i = 0; i < pc.inputDim; i += 2)
+    {
+        inputs[tid * pc.inputDim + i] = x;
+        if (i + 1 < pc.inputDim)
+            inputs[tid * pc.inputDim + i + 1] = y;
+    }
 
-    gts[tid * 3 + 0] = sin(PI * x);
-    gts[tid * 3 + 1] = cos(PI * y);
+    gts[tid * 3 + 0] = sin(3.14159265358979 * x);
+    gts[tid * 3 + 1] = cos(3.14159265358979 * y);
     gts[tid * 3 + 2] = x * y;
 }
