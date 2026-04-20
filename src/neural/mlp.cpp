@@ -9,6 +9,46 @@ static size_t align64(size_t size)
     return (size + 63) & ~63;
 }
 
+// Push constants matching mlp_forward.slang
+struct MlpForwardPushConstants
+{
+    uint64_t layerAddressBuffer;
+    uint64_t inputBuffer;
+    uint64_t outputBuffer;
+    uint64_t activationsBuffer;
+    uint32_t sampleCount;
+    uint32_t hiddenLayerCount;
+    uint32_t inputSize;
+    uint32_t outputSize;
+    uint32_t actStride;
+};
+
+// Push constants matching mlp_backward.slang
+struct MlpBackwardPushConstants
+{
+    uint64_t layerAddressBuffer;
+    uint64_t activationsBuffer;
+    uint64_t outputBuffer;
+    uint64_t gtBuffer;
+    uint64_t dInputBuffer;
+    uint64_t lossBuffer;
+    uint32_t sampleCount;
+    uint32_t hiddenLayerCount;
+    uint32_t inputSize;
+    uint32_t outputSize;
+    uint32_t actStride;
+};
+
+struct AdamPushConstants
+{
+    uint64_t adamStates;
+    uint64_t params;
+    uint64_t gradients;
+    uint32_t count;
+};
+
+static constexpr size_t kAdamStateSize = sizeof(float) * 2 + sizeof(int32_t);
+
 MLP::MLP(Device &_d, const std::vector<LayerConfig> &_layers)
     : device(_d), layers(_layers)
 {
@@ -87,6 +127,12 @@ void MLP::allocateStorage()
             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
 
     paramBufferAddr = getBufferDeviceAddress(paramBuffer->getBuffer());
+
+    adamState = std::make_unique<StorageBufferResource>(
+        device, (VkDeviceSize)totalParamCount * kAdamStateSize,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+            VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
 }
 
 void MLP::buildLayerAddressBuffer()
@@ -129,4 +175,92 @@ void MLP::initWeights(unsigned int seed)
     }
 
     paramBuffer->update(data.data());
+}
+
+void MLP::resetAdamState()
+{
+    VkCommandBuffer cmd = device.beginSingleTimeCommands();
+    vkCmdFillBuffer(cmd, adamState->getBuffer(), 0,
+                    (VkDeviceSize)totalParamCount * kAdamStateSize, 0);
+    device.endSingleTimeCommands(cmd);
+}
+
+void MLP::createPipelines()
+{
+    std::vector<DescriptorLayoutBinding> emptyBindings{};
+
+    forwardPipeline = std::make_unique<ComputePipeline>(
+        device, 1, emptyBindings,
+        "build/shaders/neural/mlp_forward.slang.spv",
+        sizeof(MlpForwardPushConstants));
+
+    backwardPipeline = std::make_unique<ComputePipeline>(
+        device, 1, emptyBindings,
+        "build/shaders/neural/mlp_backward.slang.spv",
+        sizeof(MlpBackwardPushConstants));
+
+    adamPipeline = std::make_unique<ComputePipeline>(
+        device, 1, emptyBindings,
+        "build/shaders/neural/adam_kernel.slang.spv",
+        sizeof(AdamPushConstants));
+}
+
+void MLP::recordForward(VkCommandBuffer cmd, VkBuffer input, VkBuffer output,
+                        VkBuffer activations, uint32_t sampleCount)
+{
+    MlpForwardPushConstants pc{};
+    pc.layerAddressBuffer = getBufferDeviceAddress(layerAddressBuffer->getBuffer());
+    pc.inputBuffer = getBufferDeviceAddress(input);
+    pc.outputBuffer = getBufferDeviceAddress(output);
+    pc.activationsBuffer = getBufferDeviceAddress(activations);
+    pc.sampleCount = sampleCount;
+    pc.hiddenLayerCount = (uint32_t)hiddenLayerCount;
+    pc.inputSize = (uint32_t)getInputSize();
+    pc.outputSize = (uint32_t)getOutputSize();
+    pc.actStride = (uint32_t)getActStride();
+
+    forwardPipeline->bindPipeline(cmd);
+    forwardPipeline->pushConstants(cmd, &pc);
+    vkCmdDispatch(cmd, (sampleCount + 255) / 256, 1, 1);
+}
+
+void MLP::recordBackward(VkCommandBuffer cmd, VkBuffer activations,
+                         VkBuffer output, VkBuffer gt, VkBuffer dInput,
+                         VkBuffer loss, uint32_t sampleCount)
+{
+    MlpBackwardPushConstants pc{};
+    pc.layerAddressBuffer = getBufferDeviceAddress(layerAddressBuffer->getBuffer());
+    pc.activationsBuffer = getBufferDeviceAddress(activations);
+    pc.outputBuffer = getBufferDeviceAddress(output);
+    pc.gtBuffer = getBufferDeviceAddress(gt);
+    pc.dInputBuffer = getBufferDeviceAddress(dInput);
+    pc.lossBuffer = getBufferDeviceAddress(loss);
+    pc.sampleCount = sampleCount;
+    pc.hiddenLayerCount = (uint32_t)hiddenLayerCount;
+    pc.inputSize = (uint32_t)getInputSize();
+    pc.outputSize = (uint32_t)getOutputSize();
+    pc.actStride = (uint32_t)getActStride();
+
+    backwardPipeline->bindPipeline(cmd);
+    backwardPipeline->pushConstants(cmd, &pc);
+    vkCmdDispatch(cmd, (sampleCount + 255) / 256, 1, 1);
+}
+
+void MLP::recordZeroGrads(VkCommandBuffer cmd)
+{
+    VkDeviceSize gradSize = totalBufferSize - gradientOffset;
+    vkCmdFillBuffer(cmd, paramBuffer->getBuffer(), gradientOffset, gradSize, 0);
+}
+
+void MLP::recordAdam(VkCommandBuffer cmd)
+{
+    AdamPushConstants pc{};
+    pc.adamStates = getBufferDeviceAddress(adamState->getBuffer());
+    pc.params = paramBufferAddr;
+    pc.gradients = paramBufferAddr + gradientOffset;
+    pc.count = (uint32_t)totalParamCount;
+
+    adamPipeline->bindPipeline(cmd);
+    adamPipeline->pushConstants(cmd, &pc);
+    vkCmdDispatch(cmd, (pc.count + 255) / 256, 1, 1);
 }

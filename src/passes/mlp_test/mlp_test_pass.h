@@ -16,11 +16,16 @@ private:
 
     ImageResource outputImage;
 
+    // Training buffers (random samples)
     std::unique_ptr<StorageBufferResource> inputBuffer;
     std::unique_ptr<StorageBufferResource> gtBuffer;
 
+    // Inference buffers (pixel grid)
+    std::unique_ptr<StorageBufferResource> inferenceInputBuffer;
+    std::unique_ptr<StorageBufferResource> inferenceOutputBuffer;
+
     std::unique_ptr<ComputePipeline> dataGenPipeline;
-    std::unique_ptr<ComputePipeline> inferencePipeline;
+    std::unique_ptr<ComputePipeline> writeImagePipeline;
 
     bool useEncoding{false};
 

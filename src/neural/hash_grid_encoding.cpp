@@ -1,7 +1,48 @@
 #include "hash_grid_encoding.h"
 
 #include <random>
+#include <cmath>
 #include <stdexcept>
+
+// Push constants matching hashgrid_forward.slang
+struct HashGridForwardPushConstants
+{
+    uint64_t inputBuffer;
+    uint64_t outputBuffer;
+    uint64_t hashTable;
+    uint32_t sampleCount;
+    uint32_t inputDim;
+    uint32_t numLevels;
+    uint32_t featuresPerLevel;
+    uint32_t tableSize;
+    float    coarsestResolution;
+    float    perLevelScale;
+};
+
+// Push constants matching hashgrid_backward.slang
+struct HashGridBackwardPushConstants
+{
+    uint64_t dEncodedBuffer;
+    uint64_t inputBuffer;
+    uint64_t hashTableGrad;
+    uint32_t sampleCount;
+    uint32_t inputDim;
+    uint32_t numLevels;
+    uint32_t featuresPerLevel;
+    uint32_t tableSize;
+    float    coarsestResolution;
+    float    perLevelScale;
+};
+
+struct AdamPushConstants
+{
+    uint64_t adamStates;
+    uint64_t params;
+    uint64_t gradients;
+    uint32_t count;
+};
+
+static constexpr size_t kAdamStateSize = sizeof(float) * 2 + sizeof(int32_t);
 
 HashGridEncoding::HashGridEncoding(Device &_d, const Config &cfg)
     : device(_d), config(cfg)
@@ -20,6 +61,11 @@ HashGridEncoding::HashGridEncoding(Device &_d, const Config &cfg)
     vkGetBufferDeviceAddressKHR = device.loadDeviceFunction<PFN_vkGetBufferDeviceAddressKHR>(
         "vkGetBufferDeviceAddressKHR");
 
+    perLevelScale = (cfg.numLevels > 1)
+        ? std::exp(std::log((float)cfg.finestResolution / (float)cfg.coarsestResolution)
+                   / (float)(cfg.numLevels - 1))
+        : 1.0f;
+
     tableBufferSize = (VkDeviceSize)getTotalFeatures() * sizeof(float);
 
     tableBuffer = std::make_unique<StorageBufferResource>(
@@ -37,6 +83,12 @@ HashGridEncoding::HashGridEncoding(Device &_d, const Config &cfg)
 
     tableAddr = getBufferDeviceAddress(tableBuffer->getBuffer());
     tableGradAddr = getBufferDeviceAddress(tableGradBuffer->getBuffer());
+
+    adamState = std::make_unique<StorageBufferResource>(
+        device, (VkDeviceSize)getTotalFeatures() * kAdamStateSize,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+            VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
 }
 
 uint64_t HashGridEncoding::getBufferDeviceAddress(VkBuffer buffer)
@@ -57,4 +109,90 @@ void HashGridEncoding::initTable(unsigned int seed)
         v = dist(rng);
 
     tableBuffer->update(data.data());
+}
+
+void HashGridEncoding::resetAdamState()
+{
+    VkCommandBuffer cmd = device.beginSingleTimeCommands();
+    vkCmdFillBuffer(cmd, adamState->getBuffer(), 0,
+                    (VkDeviceSize)getTotalFeatures() * kAdamStateSize, 0);
+    device.endSingleTimeCommands(cmd);
+}
+
+void HashGridEncoding::createPipelines()
+{
+    std::vector<DescriptorLayoutBinding> emptyBindings{};
+
+    forwardPipeline = std::make_unique<ComputePipeline>(
+        device, 1, emptyBindings,
+        "build/shaders/neural/hashgrid_forward.slang.spv",
+        sizeof(HashGridForwardPushConstants));
+
+    backwardPipeline = std::make_unique<ComputePipeline>(
+        device, 1, emptyBindings,
+        "build/shaders/neural/hashgrid_backward.slang.spv",
+        sizeof(HashGridBackwardPushConstants));
+
+    adamPipeline = std::make_unique<ComputePipeline>(
+        device, 1, emptyBindings,
+        "build/shaders/neural/adam_kernel.slang.spv",
+        sizeof(AdamPushConstants));
+}
+
+void HashGridEncoding::recordForward(VkCommandBuffer cmd, VkBuffer rawInput,
+                                     VkBuffer encodedOutput, uint32_t sampleCount)
+{
+    HashGridForwardPushConstants pc{};
+    pc.inputBuffer = getBufferDeviceAddress(rawInput);
+    pc.outputBuffer = getBufferDeviceAddress(encodedOutput);
+    pc.hashTable = tableAddr;
+    pc.sampleCount = sampleCount;
+    pc.inputDim = (uint32_t)config.inputDim;
+    pc.numLevels = (uint32_t)config.numLevels;
+    pc.featuresPerLevel = (uint32_t)config.featuresPerLevel;
+    pc.tableSize = (uint32_t)config.tableSize;
+    pc.coarsestResolution = (float)config.coarsestResolution;
+    pc.perLevelScale = perLevelScale;
+
+    forwardPipeline->bindPipeline(cmd);
+    forwardPipeline->pushConstants(cmd, &pc);
+    vkCmdDispatch(cmd, (sampleCount + 255) / 256, 1, 1);
+}
+
+void HashGridEncoding::recordBackward(VkCommandBuffer cmd, VkBuffer dEncoded,
+                                      VkBuffer rawInput, uint32_t sampleCount)
+{
+    HashGridBackwardPushConstants pc{};
+    pc.dEncodedBuffer = getBufferDeviceAddress(dEncoded);
+    pc.inputBuffer = getBufferDeviceAddress(rawInput);
+    pc.hashTableGrad = tableGradAddr;
+    pc.sampleCount = sampleCount;
+    pc.inputDim = (uint32_t)config.inputDim;
+    pc.numLevels = (uint32_t)config.numLevels;
+    pc.featuresPerLevel = (uint32_t)config.featuresPerLevel;
+    pc.tableSize = (uint32_t)config.tableSize;
+    pc.coarsestResolution = (float)config.coarsestResolution;
+    pc.perLevelScale = perLevelScale;
+
+    backwardPipeline->bindPipeline(cmd);
+    backwardPipeline->pushConstants(cmd, &pc);
+    vkCmdDispatch(cmd, (sampleCount + 255) / 256, 1, 1);
+}
+
+void HashGridEncoding::recordZeroGrads(VkCommandBuffer cmd)
+{
+    vkCmdFillBuffer(cmd, tableGradBuffer->getBuffer(), 0, tableBufferSize, 0);
+}
+
+void HashGridEncoding::recordAdam(VkCommandBuffer cmd)
+{
+    AdamPushConstants pc{};
+    pc.adamStates = getBufferDeviceAddress(adamState->getBuffer());
+    pc.params = tableAddr;
+    pc.gradients = tableGradAddr;
+    pc.count = (uint32_t)getTotalFeatures();
+
+    adamPipeline->bindPipeline(cmd);
+    adamPipeline->pushConstants(cmd, &pc);
+    vkCmdDispatch(cmd, (pc.count + 255) / 256, 1, 1);
 }

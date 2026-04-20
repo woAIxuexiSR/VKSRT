@@ -4,7 +4,7 @@
       "type": "mlp_test",
       "params": {
         "batchSize": 256,
-        "showGT": true,
+        "showGT": false,
         "network": {
           "encoding": {
             "type": "hashgrid",

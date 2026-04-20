@@ -2,7 +2,6 @@
 
 #include "device.h"
 #include "resource.h"
-#include "pipeline.h"
 #include "mlp.h"
 #include "hash_grid_encoding.h"
 
@@ -10,8 +9,8 @@
 #include <memory>
 #include <cstdint>
 
-// Orchestrator: owns an MLP, optional HashGridEncoding, training pipelines,
-// Adam optimizer state, and loss readback.
+// Orchestrator: owns an MLP + optional HashGridEncoding, manages intermediate
+// buffers, and records forward/train dispatch chains.
 class NeuralNetwork
 {
 public:
@@ -24,34 +23,35 @@ public:
         HashGridEncoding::Config encoding{};
     };
 
-    // Simple constructor: MLP only, no encoding.
     NeuralNetwork(Device &device, const std::vector<LayerConfig> &layers);
-
-    // Full constructor: MLP + optional hash grid encoding.
     NeuralNetwork(Device &device, const Config &config);
-
     ~NeuralNetwork();
 
     NeuralNetwork(const NeuralNetwork &) = delete;
     NeuralNetwork &operator=(const NeuralNetwork &) = delete;
 
     void initWeights(unsigned int seed = 42);
+    void createPipelines();
 
-    // Full training step: zero grads + loss → train dispatch → Adam (MLP + hash table) → copy loss
-    void recordTrain(VkCommandBuffer cmd, VkBuffer inputBuffer, VkBuffer gtBuffer, uint32_t sampleCount);
+    // Pre-allocate intermediate buffers for at least sampleCount samples.
+    // Call before recordForward/recordTrain if multiple calls per frame use different counts.
+    void ensureBuffers(uint32_t sampleCount);
 
-    // Read loss from previous frame (1-frame latency, no stall)
+    // Record full forward chain: [hashgrid_forward →] mlp_forward.
+    // Writes MLP output to outputBuffer.
+    void recordForward(VkCommandBuffer cmd, VkBuffer inputBuffer,
+                       VkBuffer outputBuffer, uint32_t sampleCount);
+
+    // Record full training step: forward → loss → backward → adam → copy loss.
+    void recordTrain(VkCommandBuffer cmd, VkBuffer inputBuffer,
+                     VkBuffer gtBuffer, uint32_t sampleCount);
+
     float readLoss() const;
 
-    // Passthrough accessors (MLP owns the actual buffers/layout)
-    int getTotalParams() const { return mlp->getTotalParams(); }
-    int getLayerCount() const { return mlp->getLayerCount(); }
-    const std::vector<LayerConfig> &getLayers() const { return mlp->getLayers(); }
-    VkBuffer getLayerAddressBuffer() const { return mlp->getLayerAddressBuffer(); }
-
-    // HashGrid accessors (null if encoding disabled)
+    int getTotalParams() const;
+    int getInputSize() const;
+    int getOutputSize() const;
     bool hasEncoding() const { return hashGrid != nullptr; }
-    const HashGridEncoding *getEncoding() const { return hashGrid.get(); }
 
 private:
     Device &device;
@@ -59,11 +59,13 @@ private:
     std::unique_ptr<HashGridEncoding> hashGrid;
 
     uint32_t lastSampleCount{1};
+    uint32_t maxSampleCount{0};
 
-    // Adam state: separate buffers per parameter block (MLP params and hash table
-    // are independent, so they each need their own (m, v, t) state).
-    std::unique_ptr<StorageBufferResource> adamStateMlp;
-    std::unique_ptr<StorageBufferResource> adamStateHash;
+    // Intermediate buffers (sized to maxSampleCount on first use)
+    std::unique_ptr<StorageBufferResource> encodedBuffer;
+    std::unique_ptr<StorageBufferResource> activationsBuffer;
+    std::unique_ptr<StorageBufferResource> mlpOutputBuffer;
+    std::unique_ptr<StorageBufferResource> dInputBuffer;
 
     // Loss tracking
     std::unique_ptr<StorageBufferResource> lossGpuBuffer;
@@ -71,13 +73,10 @@ private:
     VkDeviceMemory lossReadbackMemory{VK_NULL_HANDLE};
     void *lossReadbackMapped{nullptr};
 
-    std::unique_ptr<ComputePipeline> trainPipeline;
-    std::unique_ptr<ComputePipeline> adamPipeline;
-
     PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR{nullptr};
     uint64_t getBufferDeviceAddress(VkBuffer buffer);
 
-    void allocateTrainingBuffers();
-    void createPipelines();
+    void ensureIntermediateBuffers(uint32_t sampleCount);
+    void allocateLossBuffers();
     void computeBarrier(VkCommandBuffer cmd);
 };

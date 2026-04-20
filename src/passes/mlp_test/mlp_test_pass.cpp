@@ -4,6 +4,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <vector>
 
 REGISTER_RENDER_PASS_CPP(MlpTestPass, "mlp_test");
 
@@ -15,33 +16,13 @@ struct DataGenPushConstants
     uint32_t seed;
 };
 
-struct MlpInferencePushConstants
+struct WriteImagePushConstants
 {
-    uint64_t layerAddressBuffer;
+    uint64_t outputBuffer;
     uint32_t width;
     uint32_t height;
-    uint32_t hiddenLayerCount;
-    uint32_t showGT;
-    uint32_t inputSize;
     uint32_t outputSize;
-};
-
-struct HashInferencePushConstants
-{
-    uint64_t layerAddressBuffer;
-    uint64_t hashTable;
-    uint32_t width;
-    uint32_t height;
-    uint32_t hiddenLayerCount;
     uint32_t showGT;
-    uint32_t inputSize;
-    uint32_t outputSize;
-    uint32_t rawInputDim;
-    uint32_t numLevels;
-    uint32_t featuresPerLevel;
-    uint32_t tableSize;
-    float    coarsestResolution;
-    float    perLevelScale;
 };
 
 MlpTestPass::MlpTestPass(Device &_d, SwapChain &_sc, const json &params)
@@ -79,7 +60,6 @@ MlpTestPass::MlpTestPass(Device &_d, SwapChain &_sc, const json &params)
             if (enc.contains("coarsestResolution")) netCfg.encoding.coarsestResolution = enc["coarsestResolution"].get<int>();
             if (enc.contains("finestResolution"))   netCfg.encoding.finestResolution = enc["finestResolution"].get<int>();
             if (enc.contains("inputDim"))           netCfg.encoding.inputDim = enc["inputDim"].get<int>();
-            // MLP input size is forced to match encoded dim.
             mlpInputSize = netCfg.encoding.numLevels * netCfg.encoding.featuresPerLevel;
         }
 
@@ -93,7 +73,6 @@ MlpTestPass::MlpTestPass(Device &_d, SwapChain &_sc, const json &params)
         }
         else
         {
-            // Legacy flat schema: network.{inputSize,outputSize,hiddenSize,hiddenLayers}
             if (!useEncoding && net.contains("inputSize"))    mlpInputSize = net["inputSize"].get<int>();
             if (net.contains("outputSize"))                   mlpOutputSize = net["outputSize"].get<int>();
             if (net.contains("hiddenSize"))                   hiddenSize = net["hiddenSize"].get<int>();
@@ -101,7 +80,6 @@ MlpTestPass::MlpTestPass(Device &_d, SwapChain &_sc, const json &params)
         }
     }
 
-    // data_gen shader is hard-coded to produce 2D input / 3D output.
     assert(mlpOutputSize == 3 && "mlp_test requires outputSize == 3");
     if (useEncoding)
         assert(netCfg.encoding.inputDim == 2 && "mlp_test hash encoding requires inputDim == 2");
@@ -117,7 +95,6 @@ MlpTestPass::MlpTestPass(Device &_d, SwapChain &_sc, const json &params)
     network = std::make_unique<NeuralNetwork>(device, netCfg);
     network->initWeights(42);
 
-    // Raw input dim for the data gen kernel is always 2 (u,v).
     int rawInputDim = 2;
     int outDim = mlpOutputSize;
 
@@ -128,6 +105,32 @@ MlpTestPass::MlpTestPass(Device &_d, SwapChain &_sc, const json &params)
 
     gtBuffer = std::make_unique<StorageBufferResource>(
         device, (VkDeviceSize)maxBatchSize * outDim * sizeof(float),
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+            VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+
+    auto extent = outputImage.getExtent();
+    uint32_t pixelCount = extent.width * extent.height;
+
+    inferenceInputBuffer = std::make_unique<StorageBufferResource>(
+        device, (VkDeviceSize)pixelCount * rawInputDim * sizeof(float),
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+            VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+
+    std::vector<float> gridCoords(pixelCount * rawInputDim);
+    for (uint32_t y = 0; y < extent.height; y++)
+    {
+        for (uint32_t x = 0; x < extent.width; x++)
+        {
+            uint32_t idx = (y * extent.width + x) * rawInputDim;
+            gridCoords[idx + 0] = ((float)x + 0.5f) / (float)extent.width;
+            gridCoords[idx + 1] = ((float)y + 0.5f) / (float)extent.height;
+        }
+    }
+    inferenceInputBuffer->update(gridCoords.data());
+
+    inferenceOutputBuffer = std::make_unique<StorageBufferResource>(
+        device, (VkDeviceSize)pixelCount * outDim * sizeof(float),
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
 }
@@ -149,24 +152,19 @@ void MlpTestPass::init()
         "build/shaders/mlp_test/mlp_data_gen.slang.spv",
         sizeof(DataGenPushConstants));
 
-    const char *inferSpv = useEncoding
-        ? "build/shaders/mlp_test/mlp_hash_inference.slang.spv"
-        : "build/shaders/mlp_test/mlp_inference.slang.spv";
-    size_t inferPcSize = useEncoding
-        ? sizeof(HashInferencePushConstants)
-        : sizeof(MlpInferencePushConstants);
-
-    inferencePipeline = std::make_unique<ComputePipeline>(
+    writeImagePipeline = std::make_unique<ComputePipeline>(
         device, 1,
         std::vector<DescriptorLayoutBinding>{
             {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT},
         },
-        inferSpv,
-        inferPcSize);
+        "build/shaders/mlp_test/write_image.slang.spv",
+        sizeof(WriteImagePushConstants));
 
-    inferencePipeline->updateDescriptorSets({
+    writeImagePipeline->updateDescriptorSets({
         {VkDescriptorImageInfo{outputImage.getSampler(), outputImage.getImageView(), VK_IMAGE_LAYOUT_GENERAL}},
     });
+
+    network->createPipelines();
 }
 
 void MlpTestPass::update(uint32_t currentFrame, InputState &inputState)
@@ -202,10 +200,15 @@ PassImageSlot MlpTestPass::recordCommand(VkCommandBuffer cmd,
         return inputSlot;
 
     auto extent = outputImage.getExtent();
+    uint32_t pixelCount = extent.width * extent.height;
+
+    uint32_t maxSamples = pixelCount;
+    if (trainEnabled)
+        maxSamples = std::max(maxSamples, (uint32_t)batchSize);
+    network->ensureBuffers(maxSamples);
 
     if (trainEnabled)
     {
-        // 1. Data generation
         {
             DataGenPushConstants pc{};
             pc.inputBuffer = getBufferDeviceAddress(inputBuffer->getBuffer());
@@ -224,7 +227,6 @@ PassImageSlot MlpTestPass::recordCommand(VkCommandBuffer cmd,
                              VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                              VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT);
 
-        // 2. Train
         network->recordTrain(cmd, inputBuffer->getBuffer(), gtBuffer->getBuffer(), (uint32_t)batchSize);
 
         device.memoryBarrier(cmd,
@@ -234,63 +236,36 @@ PassImageSlot MlpTestPass::recordCommand(VkCommandBuffer cmd,
                              VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
     }
 
-    // 3. Transition output image to GENERAL for compute write
     device.imageBarrier(cmd, outputImage.getImage(),
                         VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
                         0, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
                         VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, 1);
 
-    // 4. Inference
-    uint64_t layerAddrBDA = getBufferDeviceAddress(network->getLayerAddressBuffer());
-    uint32_t mlpInputSize  = (uint32_t)network->getLayers().front().inputSize;
-    uint32_t mlpOutputSize = (uint32_t)network->getLayers().back().outputSize;
-    uint32_t hiddenLayers  = (uint32_t)(network->getLayerCount() - 2);
-
-    inferencePipeline->bindPipeline(cmd);
-    inferencePipeline->bindDescriptorSets(cmd, currentFrame);
-
-    if (useEncoding)
+    if (!showGT)
     {
-        const auto *enc = network->getEncoding();
-        const auto &hc = enc->getConfig();
-        float perLevelScale = (hc.numLevels > 1)
-            ? std::exp(std::log((float)hc.finestResolution / (float)hc.coarsestResolution)
-                       / (float)(hc.numLevels - 1))
-            : 1.0f;
+        network->recordForward(cmd, inferenceInputBuffer->getBuffer(),
+                               inferenceOutputBuffer->getBuffer(), pixelCount);
 
-        HashInferencePushConstants pc{};
-        pc.layerAddressBuffer = layerAddrBDA;
-        pc.hashTable = enc->getTableBufferAddress();
-        pc.width = extent.width;
-        pc.height = extent.height;
-        pc.hiddenLayerCount = hiddenLayers;
-        pc.showGT = showGT ? 1u : 0u;
-        pc.inputSize = mlpInputSize;
-        pc.outputSize = mlpOutputSize;
-        pc.rawInputDim = (uint32_t)hc.inputDim;
-        pc.numLevels = (uint32_t)hc.numLevels;
-        pc.featuresPerLevel = (uint32_t)hc.featuresPerLevel;
-        pc.tableSize = (uint32_t)hc.tableSize;
-        pc.coarsestResolution = (float)hc.coarsestResolution;
-        pc.perLevelScale = perLevelScale;
-
-        inferencePipeline->pushConstants(cmd, &pc);
-    }
-    else
-    {
-        MlpInferencePushConstants pc{};
-        pc.layerAddressBuffer = layerAddrBDA;
-        pc.width = extent.width;
-        pc.height = extent.height;
-        pc.hiddenLayerCount = hiddenLayers;
-        pc.showGT = showGT ? 1u : 0u;
-        pc.inputSize = mlpInputSize;
-        pc.outputSize = mlpOutputSize;
-
-        inferencePipeline->pushConstants(cmd, &pc);
+        device.memoryBarrier(cmd,
+                             VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+                             VK_ACCESS_2_SHADER_STORAGE_READ_BIT,
+                             VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                             VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
     }
 
-    vkCmdDispatch(cmd, (extent.width + 15) / 16, (extent.height + 15) / 16, 1);
+    {
+        WriteImagePushConstants pc{};
+        pc.outputBuffer = getBufferDeviceAddress(inferenceOutputBuffer->getBuffer());
+        pc.width = extent.width;
+        pc.height = extent.height;
+        pc.outputSize = (uint32_t)network->getOutputSize();
+        pc.showGT = showGT ? 1u : 0u;
+
+        writeImagePipeline->bindPipeline(cmd);
+        writeImagePipeline->bindDescriptorSets(cmd, currentFrame);
+        writeImagePipeline->pushConstants(cmd, &pc);
+        vkCmdDispatch(cmd, (extent.width + 15) / 16, (extent.height + 15) / 16, 1);
+    }
 
     return getOutputSlot();
 }

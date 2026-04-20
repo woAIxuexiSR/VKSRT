@@ -98,7 +98,7 @@ foreach(SLANG ${SLANG_FILES})
 endforeach()
 
 # Neural network compute kernels (in src/shaders/neural/, not in src/passes/)
-set(NEURAL_KERNELS "adam_kernel" "train_mlp" "train_hashmlp")
+set(NEURAL_KERNELS "adam_kernel" "mlp_forward" "mlp_backward" "hashgrid_forward" "hashgrid_backward")
 foreach(NK ${NEURAL_KERNELS})
     set(NK_SLANG "${SLANG_NEURAL_DIR}/${NK}.slang")
     set(NK_SPV "${CMAKE_BINARY_DIR}/shaders/neural/${NK}.slang.spv")
