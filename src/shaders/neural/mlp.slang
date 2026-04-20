@@ -28,11 +28,6 @@ public struct FeedForwardLayer
     }
 
     // Backward through LeakyReLU + linear.
-    //   input: cached forward input to this layer
-    //   postAct: cached post-activation (layer output); for LeakyReLU the sign
-    //            is identical to pre-activation so it is fine as the mask source
-    //   gradOutput: dL/dOutput (post-activation); mutated in place to dL/dPreAct
-    // returns dL/dInput
     public MLVec backward(MLVec input, MLVec postAct, MLVec gradOutput,
                            int inSize, int outSize)
     {

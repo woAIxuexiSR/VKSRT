@@ -1,6 +1,7 @@
-// Per-pixel MLP inference: evaluate network at (u,v) and write RGB to output image.
+// Per-pixel HashGrid+MLP inference: encode (u,v) via hash grid, run MLP, write RGB.
 import mlvec;
 import mlp;
+import hashgrid;
 
 static const int H = 64;
 static const float PI = 3.14159265358979323846;
@@ -8,12 +9,19 @@ static const float PI = 3.14159265358979323846;
 struct InferencePushConstants
 {
     uint64_t layerAddressBuffer;
+    uint64_t hashTable;
     uint width;
     uint height;
     uint hiddenLayerCount;
     uint showGT;
-    uint inputSize;
+    uint inputSize;              // MLP inputSize = encodedDim
     uint outputSize;
+    uint rawInputDim;
+    uint numLevels;
+    uint featuresPerLevel;
+    uint tableSize;
+    float coarsestResolution;
+    float perLevelScale;
 };
 
 [[vk::push_constant]]
@@ -52,13 +60,25 @@ void main(uint3 dtid : SV_DispatchThreadID)
     else
     {
         uint64_t* addrs = (uint64_t*)pc.layerAddressBuffer;
+        NFloat* table   = (NFloat*)pc.hashTable;
 
-        MLVec x = MLVec.zero();
-        if (pc.inputSize >= 1) x.data[0] = u;
-        if (pc.inputSize >= 2) x.data[1] = v;
+        HashGridParams hp;
+        hp.numLevels = int(pc.numLevels);
+        hp.featuresPerLevel = int(pc.featuresPerLevel);
+        hp.tableSize = int(pc.tableSize);
+        hp.inputDim = int(pc.rawInputDim);
+        hp.coarsestResolution = pc.coarsestResolution;
+        hp.perLevelScale = pc.perLevelScale;
+
+        MLVec coord = MLVec.zero();
+        if (pc.rawInputDim >= 1) coord.data[0] = u;
+        if (pc.rawInputDim >= 2) coord.data[1] = v;
+
+        MLVec encoded = MLVec.zero();
+        encodeForward(coord, table, hp, encoded);
 
         var inLayer = loadLayer(addrs, 0);
-        MLVec h = inLayer.eval(x, int(pc.inputSize), H);
+        MLVec h = inLayer.eval(encoded, int(pc.inputSize), H);
 
         for (uint i = 0; i < pc.hiddenLayerCount; i++)
         {

@@ -6,10 +6,20 @@
         "batchSize": 256,
         "showGT": true,
         "network": {
-          "inputSize": 2,
-          "outputSize": 3,
-          "hiddenSize": 64,
-          "hiddenLayers": 2
+          "encoding": {
+            "type": "hashgrid",
+            "numLevels": 8,
+            "featuresPerLevel": 2,
+            "tableSize": 16384,
+            "coarsestResolution": 8,
+            "finestResolution": 128,
+            "inputDim": 2
+          },
+          "mlp": {
+            "outputSize": 3,
+            "hiddenSize": 64,
+            "hiddenLayers": 2
+          }
         }
       }
     },

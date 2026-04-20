@@ -98,7 +98,7 @@ foreach(SLANG ${SLANG_FILES})
 endforeach()
 
 # Neural network compute kernels (in src/shaders/neural/, not in src/passes/)
-set(NEURAL_KERNELS "adam_kernel" "train_kernel")
+set(NEURAL_KERNELS "adam_kernel" "train_mlp" "train_hashmlp")
 foreach(NK ${NEURAL_KERNELS})
     set(NK_SLANG "${SLANG_NEURAL_DIR}/${NK}.slang")
     set(NK_SPV "${CMAKE_BINARY_DIR}/shaders/neural/${NK}.slang.spv")
@@ -117,6 +117,7 @@ add_custom_target(shaders ALL DEPENDS ${SPIRV_BINARY_FILES})
 # include directories
 include_directories(
     ${CMAKE_SOURCE_DIR}/src/core
+    ${CMAKE_SOURCE_DIR}/src/neural
     ${CMAKE_SOURCE_DIR}/src/scene
     ${CMAKE_SOURCE_DIR}/src/gui
     ${CMAKE_SOURCE_DIR}/src/passes
@@ -136,6 +137,7 @@ include_directories(${Stb_INCLUDE_DIR})
 # core library
 file(GLOB CORE_FILES
     "${CMAKE_SOURCE_DIR}/src/core/*.cpp"
+    "${CMAKE_SOURCE_DIR}/src/neural/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/scene/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/gui/*.cpp"
 )

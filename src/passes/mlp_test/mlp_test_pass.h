@@ -22,6 +22,8 @@ private:
     std::unique_ptr<ComputePipeline> dataGenPipeline;
     std::unique_ptr<ComputePipeline> inferencePipeline;
 
+    bool useEncoding{false};
+
     int batchSize{256};
     int maxBatchSize{4096};
     bool showGT{false};
