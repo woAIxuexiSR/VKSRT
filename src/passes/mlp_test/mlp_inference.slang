@@ -1,20 +1,23 @@
-// Per-pixel inference kernel: evaluate trained network at (u,v) and write RGB to output image
+// Per-pixel MLP inference: evaluate network at (u,v) and write RGB to output image.
+// Network shape (inputSize/outputSize/hiddenLayerCount) comes from push constants.
+// Currently wired to interpret:
+//   inputSize  == 2 -> feed (u, v)
+//   outputSize <= 3 -> write to R,G,B (unused channels = 0)
 import mlvec;
 import mlp;
 
 static const int H = 64;
 static const float PI = 3.14159265358979323846;
 
-// Layer addresses stored as flat uint64_t[4] per layer:
-//   [0] weights, [1] weightsGrad, [2] biases, [3] biasesGrad
-
 struct InferencePushConstants
 {
     uint64_t layerAddressBuffer;
-    uint   width;
-    uint   height;
-    uint   hiddenLayerCount;
-    uint   showGT;
+    uint width;
+    uint height;
+    uint hiddenLayerCount;
+    uint showGT;
+    uint inputSize;
+    uint outputSize;
 };
 
 [[vk::push_constant]]
@@ -23,34 +26,14 @@ InferencePushConstants pc;
 [[vk::binding(0, 0)]]
 RWTexture2D<float4> outputImage;
 
-FeedForwardLayer<In, Out> loadLayerFromAddrs<int In, int Out>(uint64_t* addrs, int layerIndex)
+FeedForwardLayer loadLayer(uint64_t* addrs, int layerIndex)
 {
     int base = layerIndex * 4;
-    FeedForwardLayer<In, Out> layer;
+    FeedForwardLayer layer;
     layer.weights     = (NFloat*)addrs[base + 0];
     layer.weightsGrad = (Atomic<NFloat>*)addrs[base + 1];
     layer.biases      = (NFloat*)addrs[base + 2];
     layer.biasesGrad  = (Atomic<NFloat>*)addrs[base + 3];
-    return layer;
-}
-
-struct OutputLayer_64_3
-{
-    NFloat* weights;
-    NFloat* biases;
-
-    MLVec<3> eval(MLVec<H> input)
-    {
-        return matMulAdd<3>(input, weights, biases);
-    }
-}
-
-OutputLayer_64_3 loadOutputLayerInfer(uint64_t* addrs, int layerIndex)
-{
-    int base = layerIndex * 4;
-    OutputLayer_64_3 layer;
-    layer.weights = (NFloat*)addrs[base + 0];
-    layer.biases  = (NFloat*)addrs[base + 2];
     return layer;
 }
 
@@ -72,31 +55,34 @@ void main(uint3 dtid : SV_DispatchThreadID)
     }
     else
     {
-        uint64_t* layerAddrs = (uint64_t*)pc.layerAddressBuffer;
+        uint64_t* addrs = (uint64_t*)pc.layerAddressBuffer;
 
-        // Input: (u,v) -> 64
-        MLVec<2> x;
-        x.data[0] = u;
-        x.data[1] = v;
+        // Build input (inputSize values). For the 2D test pass we feed (u, v).
+        MLVec x = MLVec.zero();
+        if (pc.inputSize >= 1) x.data[0] = u;
+        if (pc.inputSize >= 2) x.data[1] = v;
 
-        var inLayer = loadLayerFromAddrs<2, H>(layerAddrs, 0);
-        MLVec<H> h = inLayer.eval(x);
+        // Input layer (inputSize -> 64)
+        var inLayer = loadLayer(addrs, 0);
+        MLVec h = inLayer.eval(x, int(pc.inputSize), H);
 
-        // Hidden layers: 64 -> 64
-        for (int i = 0; i < int(pc.hiddenLayerCount); i++)
+        // Hidden layers (64 -> 64)
+        for (uint i = 0; i < pc.hiddenLayerCount; i++)
         {
-            var hl = loadLayerFromAddrs<H, H>(layerAddrs, 1 + i);
-            h = hl.eval(h);
+            var hl = loadLayer(addrs, 1 + int(i));
+            h = hl.eval(h, H, H);
         }
 
-        // Output: 64 -> 3 (linear)
-        var outLayer = loadOutputLayerInfer(layerAddrs, 1 + int(pc.hiddenLayerCount));
-        MLVec<3> result = outLayer.eval(h);
+        // Output layer (64 -> outputSize) linear
+        var outLayer = loadLayer(addrs, 1 + int(pc.hiddenLayerCount));
+        MLVec result = outLayer.evalLinear(h, H, int(pc.outputSize));
 
-        color = float3(result.data[0], result.data[1], result.data[2]);
+        color = float3(0.0);
+        if (pc.outputSize >= 1) color.x = result.data[0];
+        if (pc.outputSize >= 2) color.y = result.data[1];
+        if (pc.outputSize >= 3) color.z = result.data[2];
     }
 
-    // Clamp to [0,1] for display
     color = clamp(color, float3(0.0), float3(1.0));
     outputImage[int2(dtid.x, dtid.y)] = float4(color, 1.0);
 }

@@ -2,6 +2,8 @@
 
 #include "imgui.h"
 
+#include <cassert>
+
 REGISTER_RENDER_PASS_CPP(MlpTestPass, "mlp_test");
 
 struct DataGenPushConstants
@@ -19,6 +21,8 @@ struct InferencePushConstants
     uint32_t height;
     uint32_t hiddenLayerCount;
     uint32_t showGT;
+    uint32_t inputSize;
+    uint32_t outputSize;
 };
 
 MlpTestPass::MlpTestPass(Device &_d, SwapChain &_sc, const json &params)
@@ -34,20 +38,46 @@ MlpTestPass::MlpTestPass(Device &_d, SwapChain &_sc, const json &params)
     if (params.contains("showGT"))
         showGT = params["showGT"].get<bool>();
 
-    // Network: input(2->64) + 1 hidden(64->64) + output(64->3)
-    std::vector<NeuralNetwork::LayerConfig> layers = {
-        {2, 64}, {64, 64}, {64, 64}, {64, 3}};
+    int inputSize = 2;
+    int outputSize = 3;
+    int hiddenSize = 64;
+    int hiddenLayers = 2;
+    if (params.contains("network"))
+    {
+        const auto &net = params["network"];
+        if (net.contains("inputSize"))    inputSize    = net["inputSize"].get<int>();
+        if (net.contains("outputSize"))   outputSize   = net["outputSize"].get<int>();
+        if (net.contains("hiddenSize"))   hiddenSize   = net["hiddenSize"].get<int>();
+        if (net.contains("hiddenLayers")) hiddenLayers = net["hiddenLayers"].get<int>();
+    }
+
+    // data_gen shader is hard-coded to produce (sin(pi*x), cos(pi*y), x*y),
+    // so this test pass requires inputSize=2 and outputSize=3.
+    assert(inputSize == 2 && "mlp_test requires network.inputSize == 2");
+    assert(outputSize == 3 && "mlp_test requires network.outputSize == 3");
+    // NeuralNetwork currently fixes hidden width at 64.
+    assert(hiddenSize == 64 && "network.hiddenSize must be 64");
+
+    // Network: input(inputSize->hiddenSize) + hiddenLayers x (hiddenSize->hiddenSize) + output(hiddenSize->outputSize)
+    std::vector<NeuralNetwork::LayerConfig> layers;
+    layers.push_back({inputSize, hiddenSize});
+    for (int i = 0; i < hiddenLayers; i++)
+        layers.push_back({hiddenSize, hiddenSize});
+    layers.push_back({hiddenSize, outputSize});
+
     network = std::make_unique<NeuralNetwork>(device, layers);
     network->initWeights(42);
 
-    // Allocate input/gt buffers for max batch size
+    int inDim = inputSize;
+    int outDim = outputSize;
+
     inputBuffer = std::make_unique<StorageBufferResource>(
-        device, (VkDeviceSize)maxBatchSize * 2 * sizeof(float),
+        device, (VkDeviceSize)maxBatchSize * inDim * sizeof(float),
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
 
     gtBuffer = std::make_unique<StorageBufferResource>(
-        device, (VkDeviceSize)maxBatchSize * 3 * sizeof(float),
+        device, (VkDeviceSize)maxBatchSize * outDim * sizeof(float),
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
 }
@@ -163,6 +193,8 @@ PassImageSlot MlpTestPass::recordCommand(VkCommandBuffer cmd,
         pc.height = extent.height;
         pc.hiddenLayerCount = (uint32_t)(network->getLayerCount() - 2);
         pc.showGT = showGT ? 1u : 0u;
+        pc.inputSize = (uint32_t)network->getLayers().front().inputSize;
+        pc.outputSize = (uint32_t)network->getLayers().back().outputSize;
 
         inferencePipeline->bindPipeline(cmd);
         inferencePipeline->bindDescriptorSets(cmd, currentFrame);

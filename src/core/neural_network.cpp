@@ -38,10 +38,14 @@ NeuralNetwork::NeuralNetwork(Device &_d, const std::vector<LayerConfig> &_layers
 
     if (layers.size() < 2)
         throw std::runtime_error("NeuralNetwork requires at least 2 layers (input + output)");
+    if (layers.front().inputSize <= 0 || layers.front().inputSize > 64)
+        throw std::runtime_error("Input layer inputSize must be in (0, 64]");
+    if (layers.back().outputSize <= 0 || layers.back().outputSize > 64)
+        throw std::runtime_error("Output layer outputSize must be in (0, 64]");
     if (layers.front().outputSize != 64)
-        throw std::runtime_error("Input layer must output 64");
+        throw std::runtime_error("Input layer must output 64 (hidden width)");
     if (layers.back().inputSize != 64)
-        throw std::runtime_error("Output layer must input 64");
+        throw std::runtime_error("Output layer must input 64 (hidden width)");
     for (size_t i = 1; i + 1 < layers.size(); i++)
     {
         if (layers[i].inputSize != 64 || layers[i].outputSize != 64)

@@ -1,81 +1,36 @@
-// Generic MLP training kernel
-// Architecture: input(IN→64) + N×hidden(64→64) + output(64→OUT)
-// Currently instantiated for IN=2, OUT=3. Add more as needed.
+// Generic MLP training kernel: inputSize -> 64 -> ... -> 64 -> outputSize
+// All sizes are runtime values from push constants; hidden width is fixed at 64.
 import mlvec;
 import mlp;
-import adam;
 
-static const int H = 64; // hidden width
-static const int MAX_HIDDEN = 8;
-
-// Per-layer BDA addresses stored as flat uint64_t[4]:
-//   [0] weights, [1] weightsGrad, [2] biases, [3] biasesGrad
+static const int H = 64;           // hidden width (fixed)
+static const int MAX_HIDDEN = 8;   // cap on hidden layers
 
 struct TrainPushConstants
 {
-    uint64_t layerAddressBuffer; // BDA to uint64_t[] (4 per layer)
-    uint64_t inputBuffer;        // float[] flattened inputs
-    uint64_t gtBuffer;           // float[] flattened ground truth
-    uint64_t lossBuffer;         // BDA to Atomic<float> for loss accumulation
-    uint   sampleCount;
-    uint   hiddenLayerCount;     // number of 64->64 hidden layers
-    uint   inputSize;            // for future: switch between instantiations
-    uint   outputSize;           // for future: switch between instantiations
+    uint64_t layerAddressBuffer; // BDA to uint64_t[4 * numLayers]
+    uint64_t inputBuffer;        // float[sampleCount * inputSize]
+    uint64_t gtBuffer;           // float[sampleCount * outputSize]
+    uint64_t lossBuffer;         // Atomic<float>
+    uint sampleCount;
+    uint hiddenLayerCount;       // number of 64->64 hidden layers
+    uint inputSize;              // <= 64
+    uint outputSize;             // <= 64
 };
 
 [[vk::push_constant]]
 TrainPushConstants pc;
 
-// --- Helper: load FeedForwardLayer from flat address array ---
-
-FeedForwardLayer<In, Out> loadLayerFromAddrs<int In, int Out>(uint64_t* addrs, int layerIndex)
+FeedForwardLayer loadLayer(uint64_t* addrs, int layerIndex)
 {
     int base = layerIndex * 4;
-    FeedForwardLayer<In, Out> layer;
+    FeedForwardLayer layer;
     layer.weights     = (NFloat*)addrs[base + 0];
     layer.weightsGrad = (Atomic<NFloat>*)addrs[base + 1];
     layer.biases      = (NFloat*)addrs[base + 2];
     layer.biasesGrad  = (Atomic<NFloat>*)addrs[base + 3];
     return layer;
 }
-
-// --- Output layer: linear (no activation) ---
-
-struct OutputLayer_64_3
-{
-    NFloat* weights;
-    Atomic<NFloat>* weightsGrad;
-    NFloat* biases;
-    Atomic<NFloat>* biasesGrad;
-
-    // Linear forward (no activation)
-    MLVec<3> eval(MLVec<H> input)
-    {
-        return matMulAdd<3>(input, weights, biases);
-    }
-
-    // Linear backward
-    MLVec<H> backward(MLVec<H> input, MLVec<3> gradOutput)
-    {
-        outerProductAccumulate(gradOutput, input, weightsGrad);
-        for (int i = 0; i < 3; i++)
-            biasesGrad[i].add(gradOutput.data[i]);
-        return matMulTransposed<H>(gradOutput, weights);
-    }
-}
-
-OutputLayer_64_3 loadOutputLayerFromAddrs(uint64_t* addrs, int layerIndex)
-{
-    int base = layerIndex * 4;
-    OutputLayer_64_3 layer;
-    layer.weights     = (NFloat*)addrs[base + 0];
-    layer.weightsGrad = (Atomic<NFloat>*)addrs[base + 1];
-    layer.biases      = (NFloat*)addrs[base + 2];
-    layer.biasesGrad  = (Atomic<NFloat>*)addrs[base + 3];
-    return layer;
-}
-
-// --- Training kernel ---
 
 [numthreads(256, 1, 1)]
 [shader("compute")]
@@ -84,75 +39,68 @@ void main(uint tid : SV_DispatchThreadID)
     if (tid >= pc.sampleCount)
         return;
 
-    uint64_t* layerAddrs = (uint64_t*)pc.layerAddressBuffer;
-    float* inputs = (float*)pc.inputBuffer;
-    float* gts = (float*)pc.gtBuffer;
+    uint64_t* addrs = (uint64_t*)pc.layerAddressBuffer;
+    float* inputs   = (float*)pc.inputBuffer;
+    float* gts      = (float*)pc.gtBuffer;
 
-    // Currently: inputSize=2, outputSize=3
-    // Load input sample
-    MLVec<2> x;
-    x.data[0] = inputs[tid * 2 + 0];
-    x.data[1] = inputs[tid * 2 + 1];
+    // --- Load sample ---
+    MLVec x = MLVec.zero();
+    for (uint j = 0; j < pc.inputSize; j++)
+        x.data[j] = inputs[tid * pc.inputSize + j];
 
-    MLVec<3> gt;
-    gt.data[0] = gts[tid * 3 + 0];
-    gt.data[1] = gts[tid * 3 + 1];
-    gt.data[2] = gts[tid * 3 + 2];
+    MLVec gt = MLVec.zero();
+    for (uint j = 0; j < pc.outputSize; j++)
+        gt.data[j] = gts[tid * pc.outputSize + j];
 
-    // --- Forward pass ---
+    // --- Forward ---
+    // Layer index:   0 = input layer (inputSize -> 64)
+    //                1..hiddenLayerCount = hidden (64 -> 64)
+    //                1 + hiddenLayerCount = output layer (64 -> outputSize)
+    //
+    // acts[0]       = network input x
+    // acts[1..k]    = post-activation of layer 0..k-1  (k = 1 + hiddenLayerCount)
+    // acts[k]       = input to output layer
+    MLVec acts[MAX_HIDDEN + 2];
 
-    // Input layer: 2 -> 64
-    var inLayer = loadLayerFromAddrs<2, H>(layerAddrs, 0);
-    MLVec<H> h = inLayer.eval(x);
+    acts[0] = x;
 
-    // Hidden layers: 64 -> 64 (store inputs for backward)
-    MLVec<H> hiddenInputs[MAX_HIDDEN];
+    // Input layer (inputSize -> 64) with LeakyReLU
+    var inLayer = loadLayer(addrs, 0);
+    acts[1] = inLayer.eval(x, int(pc.inputSize), H);
 
-    for (int i = 0; i < int(pc.hiddenLayerCount); i++)
+    // Hidden layers (64 -> 64)
+    for (uint i = 0; i < pc.hiddenLayerCount; i++)
     {
-        hiddenInputs[i] = h;
-        var hl = loadLayerFromAddrs<H, H>(layerAddrs, 1 + i);
-        h = hl.eval(h);
+        var hl = loadLayer(addrs, 1 + int(i));
+        acts[2 + i] = hl.eval(acts[1 + i], H, H);
     }
 
-    // Output layer: 64 -> 3 (linear)
-    MLVec<H> outputInput = h;
-    var outLayer = loadOutputLayerFromAddrs(layerAddrs, 1 + int(pc.hiddenLayerCount));
-    MLVec<3> pred = outLayer.eval(h);
+    // Output layer (64 -> outputSize) linear
+    uint outIdx = 1 + pc.hiddenLayerCount;
+    var outLayer = loadLayer(addrs, int(outIdx));
+    MLVec pred = outLayer.evalLinear(acts[outIdx], H, int(pc.outputSize));
 
-    // --- MSE loss ---
-    MLVec<3> diff;
+    // --- MSE loss + grad ---
+    MLVec dLoss = MLVec.zero();
     float mse = 0.0;
-    for (int i = 0; i < 3; i++)
+    for (uint i = 0; i < pc.outputSize; i++)
     {
-        diff.data[i] = pred.data[i] - gt.data[i];
-        mse += diff.data[i] * diff.data[i];
+        float diff = pred.data[i] - gt.data[i];
+        mse += diff * diff;
+        dLoss.data[i] = 2.0 * diff;
     }
-
-    // Accumulate loss for readback
     Atomic<float>* lossPtr = (Atomic<float>*)pc.lossBuffer;
     lossPtr[0].add(mse);
 
-    // MSE gradient: 2 * (pred - gt)
-    MLVec<3> dLoss;
-    for (int i = 0; i < 3; i++)
-        dLoss.data[i] = 2.0 * diff.data[i];
+    // --- Backward ---
+    //   input to layer L = acts[L], post-activation of layer L = acts[L+1]
+    MLVec dH = outLayer.backwardLinear(acts[outIdx], dLoss, H, int(pc.outputSize));
 
-    // --- Backward pass ---
-
-    // Output layer backward
-    MLVec<H> dH = outLayer.backward(outputInput, dLoss);
-
-    // Hidden layers backward (reverse order)
     for (int i = int(pc.hiddenLayerCount) - 1; i >= 0; i--)
     {
-        var hl = loadLayerFromAddrs<H, H>(layerAddrs, 1 + i);
-        var pair = diffPair(hiddenInputs[i]);
-        hl.evalBwd(pair, dH);
-        dH = pair.d;
+        var hl = loadLayer(addrs, 1 + i);
+        dH = hl.backward(acts[1 + i], acts[2 + i], dH, H, H);
     }
 
-    // Input layer backward
-    var inputPair = diffPair(x);
-    inLayer.evalBwd(inputPair, dH);
+    inLayer.backward(acts[0], acts[1], dH, int(pc.inputSize), H);
 }

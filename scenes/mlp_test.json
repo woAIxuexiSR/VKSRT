@@ -1,7 +1,17 @@
 {
   "passes": [
     {
-      "type": "mlp_test"
+      "type": "mlp_test",
+      "params": {
+        "batchSize": 256,
+        "showGT": true,
+        "network": {
+          "inputSize": 2,
+          "outputSize": 3,
+          "hiddenSize": 64,
+          "hiddenLayers": 2
+        }
+      }
     },
     {
       "type": "blit"
