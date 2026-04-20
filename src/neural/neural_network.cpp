@@ -49,6 +49,9 @@ NeuralNetwork::NeuralNetwork(Device &_d, const Config &cfg)
 
     mlp = std::make_unique<MLP>(device, cfg.layers);
 
+    useEMA = cfg.useEMA;
+    emaAlpha = cfg.emaAlpha;
+
     allocateLossBuffers();
 }
 
@@ -137,6 +140,17 @@ void NeuralNetwork::createPipelines()
     mlp->createPipelines();
     for (auto &enc : encodings)
         enc->createPipelines();
+
+    if (useEMA)
+    {
+        std::vector<DescriptorLayoutBinding> emptyBindings{};
+        emaPipeline = std::make_unique<ComputePipeline>(
+            device, 1, emptyBindings,
+            "build/shaders/neural/ema_kernel.slang.spv",
+            sizeof(uint64_t) * 2 + sizeof(uint32_t) + sizeof(float));
+
+        allocateEMABuffers();
+    }
 }
 
 int NeuralNetwork::getTotalParams() const
@@ -155,6 +169,133 @@ int NeuralNetwork::getInputSize() const
 int NeuralNetwork::getOutputSize() const
 {
     return mlp->getOutputSize();
+}
+
+void NeuralNetwork::allocateEMABuffers()
+{
+    auto bufUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                    VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                    VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                    VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+
+    // Shadow MLP param buffer (params region only, no gradients)
+    VkDeviceSize mlpParamSize = mlp->getGradientOffset();
+    inferMlpParamBuffer = std::make_unique<StorageBufferResource>(device, mlpParamSize, bufUsage);
+    uint64_t inferMlpAddr = getBufferDeviceAddress(inferMlpParamBuffer->getBuffer());
+
+    // Build infer layer address buffer: same structure as MLP's but pointing to shadow buffer
+    auto &layers = mlp->getLayers();
+    VkDeviceSize layerBufSize = layers.size() * 4 * sizeof(uint64_t);
+    inferMlpLayerAddrBuffer = std::make_unique<StorageBufferResource>(device, layerBufSize, bufUsage);
+
+    // Read the original layer addresses and remap param pointers to infer buffer
+    uint64_t trainBase = mlp->getParamBufferAddress();
+    uint64_t gradBase = trainBase + mlp->getGradientOffset();
+
+    // The layer address buffer has 4 uint64 per layer: weights, weightsGrad, bias, biasGrad
+    // We remap weights and bias to infer buffer, keep grad pointers pointing to train buffer
+    std::vector<uint64_t> inferAddresses(layers.size() * 4);
+
+    // We need to read the original addresses to compute offsets
+    // Original: addr[i*4+0] = trainBase + weightsOffset, addr[i*4+2] = trainBase + biasOffset
+    // Infer:    addr[i*4+0] = inferBase + weightsOffset, addr[i*4+2] = inferBase + biasOffset
+    // Grad pointers are unused in forward, but set them to train buffer grad region for safety
+    size_t totalBufSize = 0;
+    struct LayerOff { size_t wOff, wSize, bOff, bSize; };
+    std::vector<LayerOff> offsets(layers.size());
+
+    auto align64 = [](size_t s) { return (s + 63) & ~63; };
+    for (size_t i = 0; i < layers.size(); i++)
+    {
+        size_t wSize = (size_t)layers[i].inputSize * layers[i].outputSize * sizeof(float);
+        size_t bSize = (size_t)layers[i].outputSize * sizeof(float);
+        offsets[i].wOff = totalBufSize; offsets[i].wSize = wSize;
+        totalBufSize += align64(wSize);
+        offsets[i].bOff = totalBufSize; offsets[i].bSize = bSize;
+        totalBufSize += align64(bSize);
+    }
+
+    for (size_t i = 0; i < layers.size(); i++)
+    {
+        inferAddresses[i * 4 + 0] = inferMlpAddr + offsets[i].wOff;
+        inferAddresses[i * 4 + 1] = gradBase + (offsets[i].wOff); // unused in forward
+        inferAddresses[i * 4 + 2] = inferMlpAddr + offsets[i].bOff;
+        inferAddresses[i * 4 + 3] = gradBase + (offsets[i].bOff); // unused in forward
+    }
+    inferMlpLayerAddrBuffer->update(inferAddresses.data());
+
+    // Shadow encoding param buffers (trainable encodings only)
+    inferEncParamBuffers.resize(encodings.size());
+    inferEncParamAddrs.resize(encodings.size(), 0);
+    for (size_t i = 0; i < encodings.size(); i++)
+    {
+        if (encodings[i]->hasTrainableParams())
+        {
+            VkDeviceSize encSize = encodings[i]->getParamBufferSize();
+            inferEncParamBuffers[i] = std::make_unique<StorageBufferResource>(device, encSize, bufUsage);
+            inferEncParamAddrs[i] = getBufferDeviceAddress(inferEncParamBuffers[i]->getBuffer());
+        }
+    }
+
+    // Copy initial weights to infer buffers
+    VkCommandBuffer cmd = device.beginSingleTimeCommands();
+    VkBufferCopy region{};
+    region.size = mlpParamSize;
+    vkCmdCopyBuffer(cmd, mlp->getParamBuffer(), inferMlpParamBuffer->getBuffer(), 1, &region);
+    for (size_t i = 0; i < encodings.size(); i++)
+    {
+        if (inferEncParamBuffers[i])
+        {
+            VkBufferCopy encRegion{};
+            encRegion.size = encodings[i]->getParamBufferSize();
+            vkCmdCopyBuffer(cmd, dynamic_cast<HashGridEncoding*>(encodings[i].get())->getTableBuffer(),
+                            inferEncParamBuffers[i]->getBuffer(), 1, &encRegion);
+        }
+    }
+    device.endSingleTimeCommands(cmd);
+}
+
+struct EmaPushConstants
+{
+    uint64_t inferParams;
+    uint64_t trainParams;
+    uint32_t count;
+    float alpha;
+};
+
+void NeuralNetwork::recordEMAUpdate(VkCommandBuffer cmd)
+{
+    // EMA update MLP params (only the param region, not gradients)
+    {
+        uint32_t paramFloats = (uint32_t)(mlp->getGradientOffset() / sizeof(float));
+        EmaPushConstants pc{};
+        pc.inferParams = getBufferDeviceAddress(inferMlpParamBuffer->getBuffer());
+        pc.trainParams = mlp->getParamBufferAddress();
+        pc.count = paramFloats;
+        pc.alpha = emaAlpha;
+
+        emaPipeline->bindPipeline(cmd);
+        emaPipeline->pushConstants(cmd, &pc);
+        vkCmdDispatch(cmd, (paramFloats + 255) / 256, 1, 1);
+    }
+
+    // EMA update trainable encoding params
+    for (size_t i = 0; i < encodings.size(); i++)
+    {
+        if (inferEncParamBuffers[i])
+        {
+            uint32_t count = (uint32_t)(encodings[i]->getParamBufferSize() / sizeof(float));
+            EmaPushConstants pc{};
+            pc.inferParams = inferEncParamAddrs[i];
+            pc.trainParams = encodings[i]->getParamBufferAddress();
+            pc.count = count;
+            pc.alpha = emaAlpha;
+
+            emaPipeline->bindPipeline(cmd);
+            emaPipeline->pushConstants(cmd, &pc);
+            vkCmdDispatch(cmd, (count + 255) / 256, 1, 1);
+        }
+    }
 }
 
 void NeuralNetwork::computeBarrier(VkCommandBuffer cmd)
@@ -187,16 +328,30 @@ void NeuralNetwork::recordForward(VkCommandBuffer cmd, VkBuffer inputBuffer,
     {
         for (size_t i = 0; i < encodings.size(); i++)
         {
-            encodings[i]->recordForward(cmd,
-                inputBuffer, inputFieldOffsets[i], totalRawInputDim,
-                concatBuffer->getBuffer(), outputFieldOffsets[i], totalEncodedDim,
-                sampleCount);
+            if (useEMA && inferEncParamBuffers[i])
+            {
+                encodings[i]->recordForwardWithParams(cmd, inferEncParamAddrs[i],
+                    inputBuffer, inputFieldOffsets[i], totalRawInputDim,
+                    concatBuffer->getBuffer(), outputFieldOffsets[i], totalEncodedDim,
+                    sampleCount);
+            }
+            else
+            {
+                encodings[i]->recordForward(cmd,
+                    inputBuffer, inputFieldOffsets[i], totalRawInputDim,
+                    concatBuffer->getBuffer(), outputFieldOffsets[i], totalEncodedDim,
+                    sampleCount);
+            }
         }
         computeBarrier(cmd);
         mlpInput = concatBuffer->getBuffer();
     }
 
-    mlp->recordForward(cmd, mlpInput, outputBuffer, activationsBuffer->getBuffer(), sampleCount);
+    if (useEMA)
+        mlp->recordForwardWithLayerAddr(cmd, inferMlpLayerAddrBuffer->getBuffer(),
+                                        mlpInput, outputBuffer, activationsBuffer->getBuffer(), sampleCount);
+    else
+        mlp->recordForward(cmd, mlpInput, outputBuffer, activationsBuffer->getBuffer(), sampleCount);
 }
 
 void NeuralNetwork::recordTrain(VkCommandBuffer cmd, VkBuffer inputBuffer,
@@ -266,6 +421,13 @@ void NeuralNetwork::recordTrain(VkCommandBuffer cmd, VkBuffer inputBuffer,
     {
         if (enc->hasTrainableParams())
             enc->recordAdam(cmd);
+    }
+
+    // 5.5. EMA update (train weights → infer weights)
+    if (useEMA)
+    {
+        computeBarrier(cmd);
+        recordEMAUpdate(cmd);
     }
 
     // 6. Copy loss to readback

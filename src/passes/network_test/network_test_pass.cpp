@@ -85,6 +85,11 @@ NetworkTestPass::NetworkTestPass(Device &_d, SwapChain &_sc, const json &params)
             if (!netCfg.useEncoding && netCfg.encodings.empty() && mlp.contains("inputSize"))
                 mlpInputSize = mlp["inputSize"].get<int>();
         }
+
+        if (net.contains("useEMA"))
+            netCfg.useEMA = net["useEMA"].get<bool>();
+        if (net.contains("emaAlpha"))
+            netCfg.emaAlpha = net["emaAlpha"].get<float>();
     }
 
     assert(mlpOutputSize == 3 && "network_test requires outputSize == 3");

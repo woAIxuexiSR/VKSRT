@@ -55,6 +55,15 @@ public:
     VkBuffer getTableBuffer() const { return tableBuffer->getBuffer(); }
     VkBuffer getTableGradBuffer() const { return tableGradBuffer->getBuffer(); }
 
+    uint64_t getParamBufferAddress() const override { return tableAddr; }
+    VkDeviceSize getParamBufferSize() const override { return tableBufferSize; }
+
+    void recordForwardWithParams(VkCommandBuffer cmd,
+                                 uint64_t paramAddr,
+                                 VkBuffer rawInput, uint32_t inputOffset, uint32_t inputStride,
+                                 VkBuffer encodedOutput, uint32_t outputOffset, uint32_t outputStride,
+                                 uint32_t sampleCount) override;
+
 private:
     Device &device;
     Config config;

@@ -171,6 +171,33 @@ void HashGridEncoding::recordForward(VkCommandBuffer cmd,
     vkCmdDispatch(cmd, (sampleCount + 255) / 256, 1, 1);
 }
 
+void HashGridEncoding::recordForwardWithParams(VkCommandBuffer cmd,
+                                               uint64_t paramAddr,
+                                               VkBuffer rawInput, uint32_t inputOffset, uint32_t inputStride,
+                                               VkBuffer encodedOutput, uint32_t outputOffset, uint32_t outputStride,
+                                               uint32_t sampleCount)
+{
+    HashGridForwardPushConstants pc{};
+    pc.inputBuffer = getBufferDeviceAddress(rawInput);
+    pc.outputBuffer = getBufferDeviceAddress(encodedOutput);
+    pc.hashTable = paramAddr;
+    pc.sampleCount = sampleCount;
+    pc.inputDim = (uint32_t)config.inputDim;
+    pc.numLevels = (uint32_t)config.numLevels;
+    pc.featuresPerLevel = (uint32_t)config.featuresPerLevel;
+    pc.tableSize = (uint32_t)config.tableSize;
+    pc.coarsestResolution = (float)config.coarsestResolution;
+    pc.perLevelScale = perLevelScale;
+    pc.inputFieldOffset = inputOffset;
+    pc.inputStride = inputStride;
+    pc.outputFieldOffset = outputOffset;
+    pc.outputStride = outputStride;
+
+    forwardPipeline->bindPipeline(cmd);
+    forwardPipeline->pushConstants(cmd, &pc);
+    vkCmdDispatch(cmd, (sampleCount + 255) / 256, 1, 1);
+}
+
 void HashGridEncoding::recordBackward(VkCommandBuffer cmd,
                                       VkBuffer dEncoded, uint32_t dOffset, uint32_t dStride,
                                       VkBuffer rawInput, uint32_t inputOffset, uint32_t inputStride,

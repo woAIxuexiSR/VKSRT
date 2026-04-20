@@ -1,0 +1,33 @@
+{
+  "passes": [
+    {
+      "type": "nrc",
+      "params": {
+        "scene": { "type": "cornell_box" },
+        "maxDepth": 8,
+        "rrDepth": 3,
+        "nrcQueryDepth": 1,
+        "trainFraction": 16,
+        "network": {
+          "encoding": [
+            { "type": "hashgrid", "inputDim": 3, "numLevels": 8, "featuresPerLevel": 2,
+              "tableSize": 65536, "coarsestResolution": 16, "finestResolution": 512 },
+            { "type": "sh", "inputDim": 3, "degree": 3 },
+            { "type": "sh", "inputDim": 3, "degree": 3 },
+            { "type": "identity", "inputDim": 3 }
+          ],
+          "mlp": {
+            "outputSize": 3,
+            "hiddenSize": 64,
+            "hiddenLayers": 2
+          },
+          "useEMA": true,
+          "emaAlpha": 0.99
+        }
+      }
+    },
+    {
+      "type": "blit"
+    }
+  ]
+}

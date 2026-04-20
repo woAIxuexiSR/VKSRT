@@ -15,7 +15,9 @@
             "outputSize": 3,
             "hiddenSize": 64,
             "hiddenLayers": 2
-          }
+          },
+          "useEMA": true,
+          "emaAlpha": 0.99
         }
       }
     },

@@ -27,6 +27,8 @@ public:
     {
         std::vector<LayerConfig> layers;
         std::vector<EncodingConfig> encodings;
+        bool useEMA{false};
+        float emaAlpha{0.99f};
         // Legacy single-encoding mode:
         bool useEncoding{false};
         HashGridEncoding::Config encoding{};
@@ -58,6 +60,7 @@ public:
     int getTotalEncodedDim() const { return totalEncodedDim; }
     int getTotalRawInputDim() const { return totalRawInputDim; }
     bool hasEncodings() const { return !encodings.empty(); }
+    bool isEMAEnabled() const { return useEMA; }
 
 private:
     Device &device;
@@ -83,6 +86,18 @@ private:
 
     PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR{nullptr};
     uint64_t getBufferDeviceAddress(VkBuffer buffer);
+
+    bool useEMA{false};
+    float emaAlpha{0.99f};
+
+    std::unique_ptr<StorageBufferResource> inferMlpParamBuffer;
+    std::unique_ptr<StorageBufferResource> inferMlpLayerAddrBuffer;
+    std::vector<std::unique_ptr<StorageBufferResource>> inferEncParamBuffers;
+    std::vector<uint64_t> inferEncParamAddrs;
+    std::unique_ptr<ComputePipeline> emaPipeline;
+
+    void allocateEMABuffers();
+    void recordEMAUpdate(VkCommandBuffer cmd);
 
     void ensureIntermediateBuffers(uint32_t sampleCount);
     void allocateLossBuffers();

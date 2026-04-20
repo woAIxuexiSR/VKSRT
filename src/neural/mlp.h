@@ -63,6 +63,10 @@ public:
 
     VkBuffer getLayerAddressBuffer() const { return layerAddressBuffer->getBuffer(); }
 
+    void recordForwardWithLayerAddr(VkCommandBuffer cmd, VkBuffer layerAddr,
+                                    VkBuffer input, VkBuffer output,
+                                    VkBuffer activations, uint32_t sampleCount);
+
 private:
     Device &device;
     std::vector<LayerConfig> layers;

@@ -224,6 +224,26 @@ void MLP::recordForward(VkCommandBuffer cmd, VkBuffer input, VkBuffer output,
     vkCmdDispatch(cmd, (sampleCount + 255) / 256, 1, 1);
 }
 
+void MLP::recordForwardWithLayerAddr(VkCommandBuffer cmd, VkBuffer layerAddr,
+                                     VkBuffer input, VkBuffer output,
+                                     VkBuffer activations, uint32_t sampleCount)
+{
+    MlpForwardPushConstants pc{};
+    pc.layerAddressBuffer = getBufferDeviceAddress(layerAddr);
+    pc.inputBuffer = getBufferDeviceAddress(input);
+    pc.outputBuffer = getBufferDeviceAddress(output);
+    pc.activationsBuffer = getBufferDeviceAddress(activations);
+    pc.sampleCount = sampleCount;
+    pc.hiddenLayerCount = (uint32_t)hiddenLayerCount;
+    pc.inputSize = (uint32_t)getInputSize();
+    pc.outputSize = (uint32_t)getOutputSize();
+    pc.actStride = (uint32_t)getActStride();
+
+    forwardPipeline->bindPipeline(cmd);
+    forwardPipeline->pushConstants(cmd, &pc);
+    vkCmdDispatch(cmd, (sampleCount + 255) / 256, 1, 1);
+}
+
 void MLP::recordBackward(VkCommandBuffer cmd, VkBuffer activations,
                          VkBuffer output, VkBuffer gt, VkBuffer dInput,
                          VkBuffer loss, uint32_t sampleCount)

@@ -35,4 +35,17 @@ public:
 
     virtual void recordZeroGrads(VkCommandBuffer cmd) {}
     virtual void recordAdam(VkCommandBuffer cmd) {}
+
+    virtual uint64_t getParamBufferAddress() const { return 0; }
+    virtual VkDeviceSize getParamBufferSize() const { return 0; }
+
+    virtual void recordForwardWithParams(VkCommandBuffer cmd,
+                                         uint64_t paramAddr,
+                                         VkBuffer rawInput, uint32_t inputOffset, uint32_t inputStride,
+                                         VkBuffer encodedOutput, uint32_t outputOffset, uint32_t outputStride,
+                                         uint32_t sampleCount)
+    {
+        recordForward(cmd, rawInput, inputOffset, inputStride,
+                      encodedOutput, outputOffset, outputStride, sampleCount);
+    }
 };

@@ -49,6 +49,7 @@ set(RT_MULTI_ENTRY_SHADERS
     "ray_tracing/ray_tracing"
     "path_tracing/path_tracing"
     "light_tracing/light_tracing"
+    "nrc/nrc"
 )
 
 foreach(RT_SHADER ${RT_MULTI_ENTRY_SHADERS})
@@ -75,7 +76,7 @@ file(GLOB_RECURSE SLANG_FILES "src/passes/**/*.slang")
 foreach(SLANG ${SLANG_FILES})
     # Skip multi-entry RT slang files (handled above)
     get_filename_component(SLANG_NAME ${SLANG} NAME)
-    if(SLANG_NAME STREQUAL "ray_tracing.slang" OR SLANG_NAME STREQUAL "path_tracing.slang" OR SLANG_NAME STREQUAL "light_tracing.slang")
+    if(SLANG_NAME STREQUAL "ray_tracing.slang" OR SLANG_NAME STREQUAL "path_tracing.slang" OR SLANG_NAME STREQUAL "light_tracing.slang" OR SLANG_NAME STREQUAL "nrc.slang")
         continue()
     endif()
     get_filename_component(FILE_NAME ${SLANG} NAME)
@@ -98,7 +99,7 @@ foreach(SLANG ${SLANG_FILES})
 endforeach()
 
 # Neural network compute kernels (in src/shaders/neural/, not in src/passes/)
-set(NEURAL_KERNELS "adam_kernel" "mlp_forward" "mlp_backward" "hashgrid_forward" "hashgrid_backward" "identity_forward" "sh_forward" "frequency_forward" "oneblob_forward")
+set(NEURAL_KERNELS "adam_kernel" "ema_kernel" "mlp_forward" "mlp_backward" "hashgrid_forward" "hashgrid_backward" "identity_forward" "sh_forward" "frequency_forward" "oneblob_forward")
 foreach(NK ${NEURAL_KERNELS})
     set(NK_SLANG "${SLANG_NEURAL_DIR}/${NK}.slang")
     set(NK_SPV "${CMAKE_BINARY_DIR}/shaders/neural/${NK}.slang.spv")
@@ -131,6 +132,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/src/passes/wavefront_pt
     ${CMAKE_SOURCE_DIR}/src/passes/branch_pt
     ${CMAKE_SOURCE_DIR}/src/passes/network_test
+    ${CMAKE_SOURCE_DIR}/src/passes/nrc
 )
 include_directories(${Stb_INCLUDE_DIR})
 
@@ -163,6 +165,7 @@ file(GLOB PASSES_FILES
     "${CMAKE_SOURCE_DIR}/src/passes/wavefront_pt/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/passes/branch_pt/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/passes/network_test/*.cpp"
+    "${CMAKE_SOURCE_DIR}/src/passes/nrc/*.cpp"
 )
 add_library(passes STATIC ${PASSES_FILES})
 target_link_libraries(passes PRIVATE
