@@ -178,7 +178,7 @@ void NRCPass::init()
 
     rtPipeline = std::make_unique<RayTracingPipeline>(
         device, 1, rtBindings,
-        "build/shaders/nrc/nrc.spv",
+        shaderPath("nrc/nrc.spv"),
         model.getHitSBTRecords(),
         "raygenMain", "missMain", "closestHitMain",
         sizeof(NRCPushConstants));
@@ -201,7 +201,7 @@ void NRCPass::init()
             {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT},
             {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT},
         },
-        "build/shaders/nrc/nrc_composite.slang.spv",
+        shaderPath("nrc/nrc_composite.spv"),
         sizeof(NRCCompositePushConstants));
 
     compositePipeline->updateDescriptorSets({

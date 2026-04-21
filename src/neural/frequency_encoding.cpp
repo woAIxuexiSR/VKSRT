@@ -40,7 +40,7 @@ void FrequencyEncoding::createPipelines()
     std::vector<DescriptorLayoutBinding> emptyBindings{};
     forwardPipeline = std::make_unique<ComputePipeline>(
         device, 1, emptyBindings,
-        "build/shaders/neural/frequency_forward.slang.spv",
+        shaderPath("neural/frequency_forward.spv"),
         sizeof(FrequencyForwardPushConstants));
 }
 

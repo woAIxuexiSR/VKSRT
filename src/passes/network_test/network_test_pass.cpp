@@ -209,7 +209,7 @@ void NetworkTestPass::init()
 
     dataGenPipeline = std::make_unique<ComputePipeline>(
         device, 1, emptyBindings,
-        "build/shaders/network_test/mlp_data_gen.slang.spv",
+        shaderPath("network_test/mlp_data_gen.spv"),
         sizeof(DataGenPushConstants));
 
     writeImagePipeline = std::make_unique<ComputePipeline>(
@@ -217,7 +217,7 @@ void NetworkTestPass::init()
         std::vector<DescriptorLayoutBinding>{
             {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT},
         },
-        "build/shaders/network_test/write_image.slang.spv",
+        shaderPath("network_test/write_image.spv"),
         sizeof(WriteImagePushConstants));
 
     writeImagePipeline->updateDescriptorSets({

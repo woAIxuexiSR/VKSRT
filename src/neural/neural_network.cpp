@@ -146,7 +146,7 @@ void NeuralNetwork::createPipelines()
         std::vector<DescriptorLayoutBinding> emptyBindings{};
         emaPipeline = std::make_unique<ComputePipeline>(
             device, 1, emptyBindings,
-            "build/shaders/neural/ema_kernel.slang.spv",
+            shaderPath("neural/ema_kernel.spv"),
             sizeof(uint64_t) * 2 + sizeof(uint32_t) + sizeof(float));
 
         allocateEMABuffers();

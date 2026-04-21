@@ -45,7 +45,7 @@ void OneBlobEncoding::createPipelines()
     std::vector<DescriptorLayoutBinding> emptyBindings{};
     forwardPipeline = std::make_unique<ComputePipeline>(
         device, 1, emptyBindings,
-        "build/shaders/neural/oneblob_forward.slang.spv",
+        shaderPath("neural/oneblob_forward.spv"),
         sizeof(OneBlobForwardPushConstants));
 }
 

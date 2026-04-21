@@ -166,11 +166,11 @@ void BranchPTPass::init()
             device, 1, bindings, spvPath, sizeof(BrPTPushConstants));
     };
 
-    initPipeline = createPipeline("build/shaders/branch_pt/brpt_init.slang.spv");
-    advancePipeline = createPipeline("build/shaders/branch_pt/brpt_advance.slang.spv");
-    propagatePipeline = createPipeline("build/shaders/branch_pt/brpt_propagate.slang.spv");
-    accumulatePipeline = createPipeline("build/shaders/branch_pt/brpt_accumulate.slang.spv");
-    prepareIndirectPipeline = createPipeline("build/shaders/branch_pt/brpt_prepare_indirect.slang.spv");
+    initPipeline = createPipeline(shaderPath("branch_pt/brpt_init.spv"));
+    advancePipeline = createPipeline(shaderPath("branch_pt/brpt_advance.spv"));
+    propagatePipeline = createPipeline(shaderPath("branch_pt/brpt_propagate.spv"));
+    accumulatePipeline = createPipeline(shaderPath("branch_pt/brpt_accumulate.spv"));
+    prepareIndirectPipeline = createPipeline(shaderPath("branch_pt/brpt_prepare_indirect.spv"));
 
     // Build descriptor infos
     std::vector<std::vector<DescriptorInfo>> infos = {

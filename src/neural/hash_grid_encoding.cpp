@@ -131,17 +131,17 @@ void HashGridEncoding::createPipelines()
 
     forwardPipeline = std::make_unique<ComputePipeline>(
         device, 1, emptyBindings,
-        "build/shaders/neural/hashgrid_forward.slang.spv",
+        shaderPath("neural/hashgrid_forward.spv"),
         sizeof(HashGridForwardPushConstants));
 
     backwardPipeline = std::make_unique<ComputePipeline>(
         device, 1, emptyBindings,
-        "build/shaders/neural/hashgrid_backward.slang.spv",
+        shaderPath("neural/hashgrid_backward.spv"),
         sizeof(HashGridBackwardPushConstants));
 
     adamPipeline = std::make_unique<ComputePipeline>(
         device, 1, emptyBindings,
-        "build/shaders/neural/adam_kernel.slang.spv",
+        shaderPath("neural/adam_kernel.spv"),
         sizeof(AdamPushConstants));
 }
 

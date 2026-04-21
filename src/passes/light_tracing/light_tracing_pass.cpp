@@ -53,7 +53,7 @@ void LightTracingPass::init()
 
     rtPipeline = std::make_unique<RayTracingPipeline>(
         device, 1, rtBindings,
-        "build/shaders/light_tracing/light_tracing.spv",
+        shaderPath("light_tracing/light_tracing.spv"),
         model.getHitSBTRecords(),
         "raygenMain", "missMain", "closestHitMain",
         sizeof(LTPushConstants));
@@ -82,7 +82,7 @@ void LightTracingPass::init()
 
     composePipeline = std::make_unique<ComputePipeline>(
         device, 1, composeBindings,
-        "build/shaders/light_tracing/lt_compose.slang.spv");
+        shaderPath("light_tracing/lt_compose.spv"));
 
     std::vector<std::vector<DescriptorInfo>> composeInfos = {
         {VkDescriptorImageInfo{splatR.getSampler(), splatR.getImageView(), VK_IMAGE_LAYOUT_GENERAL}},

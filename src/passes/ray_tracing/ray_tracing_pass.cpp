@@ -29,7 +29,7 @@ void RayTracingPass::init()
 
     rtPipeline = std::make_unique<RayTracingPipeline>(
         device, 1, bindings,
-        "build/shaders/ray_tracing/ray_tracing.spv",
+        shaderPath("ray_tracing/ray_tracing.spv"),
         model.getHitSBTRecords(),
         "raygenMain", "missMain", "closestHitMain",
         sizeof(RTPushConstants));

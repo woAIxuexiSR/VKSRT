@@ -191,17 +191,17 @@ void MLP::createPipelines()
 
     forwardPipeline = std::make_unique<ComputePipeline>(
         device, 1, emptyBindings,
-        "build/shaders/neural/mlp_forward.slang.spv",
+        shaderPath("neural/mlp_forward.spv"),
         sizeof(MlpForwardPushConstants));
 
     backwardPipeline = std::make_unique<ComputePipeline>(
         device, 1, emptyBindings,
-        "build/shaders/neural/mlp_backward.slang.spv",
+        shaderPath("neural/mlp_backward.spv"),
         sizeof(MlpBackwardPushConstants));
 
     adamPipeline = std::make_unique<ComputePipeline>(
         device, 1, emptyBindings,
-        "build/shaders/neural/adam_kernel.slang.spv",
+        shaderPath("neural/adam_kernel.spv"),
         sizeof(AdamPushConstants));
 }
 

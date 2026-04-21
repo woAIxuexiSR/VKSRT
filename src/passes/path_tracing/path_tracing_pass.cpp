@@ -40,7 +40,7 @@ void PathTracingPass::init()
 
     rtPipeline = std::make_unique<RayTracingPipeline>(
         device, 1, bindings,
-        "build/shaders/path_tracing/path_tracing.spv",
+        shaderPath("path_tracing/path_tracing.spv"),
         model.getHitSBTRecords(),
         "raygenMain", "missMain", "closestHitMain",
         sizeof(PTPushConstants));

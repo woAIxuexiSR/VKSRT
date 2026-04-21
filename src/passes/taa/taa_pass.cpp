@@ -29,7 +29,7 @@ void TAAPass::init()
             {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT},          // 3: gbufferPosition
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT},         // 4: taaParams
         },
-        "build/shaders/taa/taa.slang.spv",
+        shaderPath("taa/taa.spv"),
         sizeof(TAAPushConstants));
 
     taaPipeline->updateDescriptorSets({

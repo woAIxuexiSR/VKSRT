@@ -91,12 +91,12 @@ void WavefrontPTPass::init()
             device, 1, bindings, spvPath, sizeof(WFPTPushConstants));
     };
 
-    generatePipeline = createPipeline("build/shaders/wavefront_pt/wf_generate.slang.spv");
-    prepareIndirectPipeline = createPipeline("build/shaders/wavefront_pt/wf_prepare_indirect.slang.spv");
-    extendPipeline = createPipeline("build/shaders/wavefront_pt/wf_extend.slang.spv");
-    shadePipeline = createPipeline("build/shaders/wavefront_pt/wf_shade.slang.spv");
-    shadowPipeline = createPipeline("build/shaders/wavefront_pt/wf_shadow.slang.spv");
-    accumulatePipeline = createPipeline("build/shaders/wavefront_pt/wf_accumulate.slang.spv");
+    generatePipeline = createPipeline(shaderPath("wavefront_pt/wf_generate.spv"));
+    prepareIndirectPipeline = createPipeline(shaderPath("wavefront_pt/wf_prepare_indirect.spv"));
+    extendPipeline = createPipeline(shaderPath("wavefront_pt/wf_extend.spv"));
+    shadePipeline = createPipeline(shaderPath("wavefront_pt/wf_shade.spv"));
+    shadowPipeline = createPipeline(shaderPath("wavefront_pt/wf_shadow.spv"));
+    accumulatePipeline = createPipeline(shaderPath("wavefront_pt/wf_accumulate.spv"));
 
     // Build descriptor infos
     std::vector<std::vector<DescriptorInfo>> infos = {

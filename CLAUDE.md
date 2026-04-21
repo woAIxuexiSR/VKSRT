@@ -141,21 +141,20 @@ passes 编译为独立静态库，链接到 main。
 - [x] Light Tracer（光子发射 + float atomic splat + compose）
 - [x] Wavefront Path Tracing（6 compute kernels + atomic compaction + indirect dispatch）
 
-### M7: Stylized 渲染
+### M7: Stylized 渲染 [已完成]
 - [x] Branch MC
-- 卡通渲染 idea 实现
 - [x] GGX microfacet BRDF（Metal GGX VNDF + Lambertian diffuse+specular）
 - [x] 离线渲染模式（--offline + PNG 输出）
 - [x] 材质类型封装（isDeltaBRDF/isEmissive/canTransmit）
 
-### M8: GPU 神经网络基础设施 [进行中]
+### M8: GPU 神经网络基础设施 [已完成]
 - [x] Pure MLP forward/backward/Adam（Slang compute shader，手写反向）
 - [x] HashGrid encoding（多分辨率哈希网格，trainable，InterlockedAdd 梯度）
 - [x] 多 Encoding 架构（Encoding 基类 + 工厂模式，strided concat buffer）
 - [x] 5 种 Encoding：HashGrid / Frequency / SH / OneBlob / Identity
 - [x] NeuralNetwork 编排器（多 encoding forward → MLP → backward → Adam）
 - [x] network_test pass（可视化训练/推理，多 encoding 拼接验证）
-- [ ] Neural Radiance Cache（NRC，嵌入 path tracing）
+- [x] Neural Radiance Cache（NRC，嵌入 path tracing）
 
 ## Build Commands
 ```bash

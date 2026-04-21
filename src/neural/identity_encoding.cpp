@@ -32,7 +32,7 @@ void IdentityEncoding::createPipelines()
     std::vector<DescriptorLayoutBinding> emptyBindings{};
     forwardPipeline = std::make_unique<ComputePipeline>(
         device, 1, emptyBindings,
-        "build/shaders/neural/identity_forward.slang.spv",
+        shaderPath("neural/identity_forward.spv"),
         sizeof(IdentityForwardPushConstants));
 }
 

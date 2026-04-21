@@ -3,6 +3,7 @@
 #include "device.h"
 #include "resource.h"
 #include "swap_chain.h"
+#include "paths.h"
 
 #include <string>
 #include <vector>

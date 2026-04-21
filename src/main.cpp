@@ -13,6 +13,7 @@
 #include "camera.h"
 #include "gbuffer.h"
 #include "blit_pass.h"
+#include "project_config.h"
 
 #include <chrono>
 #include <cmath>
@@ -474,23 +475,35 @@ private:
     }
 };
 
+static void printUsage(const char *prog)
+{
+    std::cout <<
+        "Usage: " << prog << " [options] [config.json]\n"
+        "\n"
+        "Options:\n"
+        "  -h, --help            Show this help and exit\n"
+        "  --config <path>       Path to scene config JSON (relative to cwd or absolute).\n"
+        "                        Defaults to " << PROJECT_ROOT << "/config.json\n"
+        "  --offline <samples>   Run offline, render N samples and save to PNG\n"
+        "  --output <name>       Output filename (without extension) for --offline. Default: output\n"
+        "\n"
+        "A bare positional argument is treated as the config path, same as --config.\n";
+}
+
 int main(int argc, char *argv[])
 {
-    // Set working directory to project root (exe is in build/Debug/ or build/Release/)
-    {
-        auto exeDir = std::filesystem::path(argv[0]).parent_path();
-        auto projectRoot = std::filesystem::weakly_canonical(exeDir / "../../");
-        std::filesystem::current_path(projectRoot);
-        std::cout << "Working directory: " << std::filesystem::current_path() << std::endl;
-    }
-
-    std::string configPath = "config.json";
+    std::string configPath = std::string(PROJECT_ROOT) + "/config.json";
     OfflineConfig offline;
 
     for (int i = 1; i < argc; i++)
     {
         std::string arg = argv[i];
-        if (arg == "--config" && i + 1 < argc)
+        if (arg == "-h" || arg == "--help")
+        {
+            printUsage(argv[0]);
+            return 0;
+        }
+        else if (arg == "--config" && i + 1 < argc)
             configPath = argv[++i];
         else if (arg == "--offline" && i + 1 < argc)
         {

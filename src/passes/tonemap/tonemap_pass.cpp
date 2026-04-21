@@ -21,7 +21,7 @@ void TonemapPass::init()
             {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT},
             {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT},
         },
-        "build/shaders/tonemap/tonemap.slang.spv",
+        shaderPath("tonemap/tonemap.spv"),
         sizeof(TonemapPushConstants));
 
     tonemapPipeline->updateDescriptorSets({

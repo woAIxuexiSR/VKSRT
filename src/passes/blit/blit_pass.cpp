@@ -29,7 +29,7 @@ void BlitPass::init()
         },
         std::vector<VkVertexInputBindingDescription>{},
         std::vector<VkVertexInputAttributeDescription>{},
-        "build/shaders/blit/blit.slang.spv",
+        shaderPath("blit/blit.spv"),
         std::vector<VkFormat>{swapChain.getImageFormat()});
 
     blitPipeline->updateDescriptorSets({

@@ -39,7 +39,7 @@ void SHEncoding::createPipelines()
     std::vector<DescriptorLayoutBinding> emptyBindings{};
     forwardPipeline = std::make_unique<ComputePipeline>(
         device, 1, emptyBindings,
-        "build/shaders/neural/sh_forward.slang.spv",
+        shaderPath("neural/sh_forward.spv"),
         sizeof(SHForwardPushConstants));
 }
 
