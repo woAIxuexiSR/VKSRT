@@ -47,6 +47,10 @@ public:
     StorageBufferResource &operator=(const StorageBufferResource &) = delete;
 
     void update(void *data);
+    void update(const void *data, VkDeviceSize srcSize, VkDeviceSize dstOffset = 0);
+    void download(void *data) const;
+    void download(void *data, VkDeviceSize dstSize, VkDeviceSize srcOffset = 0) const;
+    VkDeviceSize getSize() const { return size; }
     VkBuffer getBuffer() const { return buffer; }
 };
 

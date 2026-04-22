@@ -36,13 +36,20 @@ Construct `NeuralNetwork` directly from JSON:
       "hiddenLayers": 2
     },
     "useEMA": true,
-    "emaAlpha": 0.99
+    "emaAlpha": 0.99,
+    "learningRate": 0.01,
+    "loadPath": "models/foo.vknn",
+    "savePath": "models/foo.vknn"
   }
 }
 ```
 
 `encoding` is an array; each entry specifies the encoding for one input field. The sum of all encodings' `outputDim` equals the MLP's `inputSize` and must be <= 64.
 If the `encoding` field is omitted, the MLP reads the raw input directly, and `mlp.inputSize` must be given explicitly.
+
+Optional top-level fields:
+- `learningRate` — Adam learning rate applied to the MLP and every trainable encoding. Individual encodings may override by setting `"learningRate"` inside their own entry (e.g. hash grid typically wants a higher LR than the MLP).
+- `loadPath` / `savePath` — on-disk parameter blob (MLP + trainable encodings). `loadPath` is applied after `initWeights` so the file silently overrides the random init; `savePath` is flushed in the `NeuralNetwork` destructor (after `vkDeviceWaitIdle` in `main.cpp`). Relative paths resolve against the directory of the scene config (via `paths.h::configRelPath`); absolute paths are used as-is. File format: `"VKNN"` magic + `uint32 version=1` + MLP segment + per-encoding payload; shape mismatch vs. current config throws.
 
 ### 2. C++ interface
 

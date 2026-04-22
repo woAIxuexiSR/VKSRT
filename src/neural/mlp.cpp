@@ -1,8 +1,11 @@
 #include "mlp.h"
 
-#include <random>
 #include <cmath>
+#include <istream>
+#include <ostream>
+#include <random>
 #include <stdexcept>
+#include <vector>
 
 static size_t align64(size_t size)
 {
@@ -45,6 +48,7 @@ struct AdamPushConstants
     uint64_t params;
     uint64_t gradients;
     uint32_t count;
+    float learningRate;
 };
 
 static constexpr size_t kAdamStateSize = sizeof(float) * 2 + sizeof(int32_t);
@@ -256,8 +260,63 @@ void MLP::recordAdam(VkCommandBuffer cmd)
     pc.params = paramBufferAddr;
     pc.gradients = paramBufferAddr + gradientOffset;
     pc.count = (uint32_t)totalParamCount;
+    pc.learningRate = learningRate;
 
     adamPipeline->bindPipeline(cmd);
     adamPipeline->pushConstants(cmd, &pc);
     vkCmdDispatch(cmd, (pc.count + 255) / 256, 1, 1);
+}
+
+void MLP::serialize(std::ostream &os) const
+{
+    const uint32_t layerCount = (uint32_t)layers.size();
+    os.write(reinterpret_cast<const char *>(&layerCount), sizeof(layerCount));
+    for (const auto &l : layers)
+    {
+        int32_t in = (int32_t)l.inputSize;
+        int32_t out = (int32_t)l.outputSize;
+        os.write(reinterpret_cast<const char *>(&in), sizeof(in));
+        os.write(reinterpret_cast<const char *>(&out), sizeof(out));
+    }
+
+    const uint64_t paramBytes = (uint64_t)gradientOffset;
+    os.write(reinterpret_cast<const char *>(&paramBytes), sizeof(paramBytes));
+
+    std::vector<char> buf((size_t)paramBytes);
+    paramBuffer->download(buf.data(), paramBytes, 0);
+    os.write(buf.data(), (std::streamsize)paramBytes);
+}
+
+void MLP::deserialize(std::istream &is)
+{
+    uint32_t layerCount = 0;
+    is.read(reinterpret_cast<char *>(&layerCount), sizeof(layerCount));
+    if (layerCount != layers.size())
+        throw std::runtime_error("MLP::deserialize: layerCount mismatch (file=" +
+                                 std::to_string(layerCount) + ", config=" +
+                                 std::to_string(layers.size()) + ")");
+
+    for (uint32_t i = 0; i < layerCount; i++)
+    {
+        int32_t in = 0, out = 0;
+        is.read(reinterpret_cast<char *>(&in), sizeof(in));
+        is.read(reinterpret_cast<char *>(&out), sizeof(out));
+        if (in != layers[i].inputSize || out != layers[i].outputSize)
+            throw std::runtime_error("MLP::deserialize: layer " + std::to_string(i) +
+                                     " shape mismatch");
+    }
+
+    uint64_t paramBytes = 0;
+    is.read(reinterpret_cast<char *>(&paramBytes), sizeof(paramBytes));
+    if (paramBytes != (uint64_t)gradientOffset)
+        throw std::runtime_error("MLP::deserialize: paramBytes mismatch (file=" +
+                                 std::to_string(paramBytes) + ", expected=" +
+                                 std::to_string(gradientOffset) + ")");
+
+    std::vector<char> buf((size_t)paramBytes);
+    is.read(buf.data(), (std::streamsize)paramBytes);
+    if (!is || (uint64_t)is.gcount() != paramBytes)
+        throw std::runtime_error("MLP::deserialize: short read on param blob");
+
+    paramBuffer->update(buf.data(), paramBytes, 0);
 }

@@ -15,6 +15,17 @@ Config files define a pipeline of render passes executed in order. Each pass rec
 
 Run with: `main.exe --config ../../scenes/path_tracing.json`
 
+## Top-level fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `passes` | array | Required. Ordered pipeline of passes. |
+| `window` | object | Optional. `{ "width": 1600, "height": 1200 }`. Defaults used when absent. |
+| `camera` | object | Optional. `pos` / `target` / `fov`. |
+| `scene` | object | Optional. Scene specification shared across passes (see below). |
+
+All paths inside the config (model `path`, network `loadPath` / `savePath`, etc.) are resolved relative to the directory of the config file. Absolute paths are used as-is.
+
 ## Render Passes
 
 ### `ray_tracing` — Debug Visualization

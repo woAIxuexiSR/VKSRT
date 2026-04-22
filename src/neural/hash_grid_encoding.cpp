@@ -1,8 +1,11 @@
 #include "hash_grid_encoding.h"
 
-#include <random>
 #include <cmath>
+#include <istream>
+#include <ostream>
+#include <random>
 #include <stdexcept>
+#include <vector>
 
 REGISTER_ENCODING_CPP(HashGridEncoding, "hashgrid");
 
@@ -48,6 +51,7 @@ struct AdamPushConstants
     uint64_t params;
     uint64_t gradients;
     uint32_t count;
+    float learningRate;
 };
 
 static constexpr size_t kAdamStateSize = sizeof(float) * 2 + sizeof(int32_t);
@@ -61,6 +65,7 @@ HashGridEncoding::HashGridEncoding(Device &_d, const json &params)
     if (params.contains("coarsestResolution")) coarsestResolution = params["coarsestResolution"].get<int>();
     if (params.contains("finestResolution"))   finestResolution = params["finestResolution"].get<int>();
     if (params.contains("inputDim"))           inputDim = params["inputDim"].get<int>();
+    if (params.contains("learningRate"))       learningRate = params["learningRate"].get<float>();
 
     if (numLevels <= 0 || numLevels > 32)
         throw std::runtime_error("HashGridEncoding: numLevels must be in (0, 32]");
@@ -234,8 +239,43 @@ void HashGridEncoding::recordAdam(VkCommandBuffer cmd)
     pc.params = tableAddr;
     pc.gradients = tableGradAddr;
     pc.count = (uint32_t)getTotalFeatures();
+    pc.learningRate = learningRate;
 
     adamPipeline->bindPipeline(cmd);
     adamPipeline->pushConstants(cmd, &pc);
     vkCmdDispatch(cmd, (pc.count + 255) / 256, 1, 1);
+}
+
+void HashGridEncoding::serialize(std::ostream &os) const
+{
+    const int32_t nl = (int32_t)numLevels;
+    const int32_t fpl = (int32_t)featuresPerLevel;
+    const int32_t ts = (int32_t)tableSize;
+    const int32_t id = (int32_t)inputDim;
+    os.write(reinterpret_cast<const char *>(&nl), sizeof(nl));
+    os.write(reinterpret_cast<const char *>(&fpl), sizeof(fpl));
+    os.write(reinterpret_cast<const char *>(&ts), sizeof(ts));
+    os.write(reinterpret_cast<const char *>(&id), sizeof(id));
+
+    std::vector<char> buf((size_t)tableBufferSize);
+    tableBuffer->download(buf.data(), tableBufferSize, 0);
+    os.write(buf.data(), (std::streamsize)tableBufferSize);
+}
+
+void HashGridEncoding::deserialize(std::istream &is)
+{
+    int32_t nl = 0, fpl = 0, ts = 0, id = 0;
+    is.read(reinterpret_cast<char *>(&nl), sizeof(nl));
+    is.read(reinterpret_cast<char *>(&fpl), sizeof(fpl));
+    is.read(reinterpret_cast<char *>(&ts), sizeof(ts));
+    is.read(reinterpret_cast<char *>(&id), sizeof(id));
+    if (nl != numLevels || fpl != featuresPerLevel || ts != tableSize || id != inputDim)
+        throw std::runtime_error("HashGridEncoding::deserialize: shape mismatch");
+
+    std::vector<char> buf((size_t)tableBufferSize);
+    is.read(buf.data(), (std::streamsize)tableBufferSize);
+    if (!is || (uint64_t)is.gcount() != (uint64_t)tableBufferSize)
+        throw std::runtime_error("HashGridEncoding::deserialize: short read on table blob");
+
+    tableBuffer->update(buf.data(), tableBufferSize, 0);
 }

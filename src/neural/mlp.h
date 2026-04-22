@@ -7,6 +7,7 @@
 #include <vector>
 #include <memory>
 #include <cstdint>
+#include <iosfwd>
 
 // Fixed-hidden-width MLP (hidden width = 64).
 // Owns packed param/grad storage, BDA layer-address table,
@@ -48,6 +49,15 @@ public:
     // Reset Adam state (call once after initWeights).
     void resetAdamState();
 
+    void setLearningRate(float lr) { learningRate = lr; }
+    float getLearningRate() const { return learningRate; }
+
+    // Dump/restore the trainable param region (front half of paramBuffer, gradientOffset bytes).
+    // serialize writes { layerCount, (inputSize, outputSize)*layerCount, paramBytes, blob };
+    // deserialize validates shape against current config and throws on mismatch.
+    void serialize(std::ostream &os) const;
+    void deserialize(std::istream &is);
+
     int getTotalParams() const { return totalParamCount; }
     int getLayerCount() const { return (int)layers.size(); }
     int getHiddenLayerCount() const { return hiddenLayerCount; }
@@ -71,6 +81,7 @@ private:
     Device &device;
     std::vector<LayerConfig> layers;
     int hiddenLayerCount{0};
+    float learningRate{0.01f};
 
     struct LayerAllocation
     {

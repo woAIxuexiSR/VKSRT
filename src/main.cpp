@@ -15,6 +15,7 @@
 #include "ray_tracing_model.h"
 #include "scene_loader.h"
 #include "blit_pass.h"
+#include "paths.h"
 #include "project_config.h"
 
 #include <chrono>
@@ -28,7 +29,13 @@
 #include "stb_image_write.h"
 
 static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
-static constexpr int WIDTH = 1600, HEIGHT = 1200;
+static constexpr int DEFAULT_WIDTH = 1600, DEFAULT_HEIGHT = 1200;
+
+struct WindowSize
+{
+    int width = DEFAULT_WIDTH;
+    int height = DEFAULT_HEIGHT;
+};
 
 struct OfflineConfig
 {
@@ -60,11 +67,11 @@ private:
     char saveFilename[128] = "screenshot";
 
 public:
-    Application(const std::string &configPath, const OfflineConfig &offline = {})
+    Application(const std::string &configPath, WindowSize ws, const OfflineConfig &offline = {})
         : offlineConfig(offline),
-          window(WIDTH, HEIGHT, "VKSRT", !offline.enabled),
+          window(ws.width, ws.height, "VKSRT", !offline.enabled),
           camera({0.5f, -2.0f, 0.5f}, {0.5f, 0.0f, 0.5f},
-                 (float)WIDTH / HEIGHT, 45.0f, 0.1f, 100.0f)
+                 (float)ws.width / ws.height, 45.0f, 0.1f, 100.0f)
     {
         commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 
@@ -117,6 +124,8 @@ private:
 
         json config = json::parse(file);
 
+        setConfigDir(std::filesystem::absolute(configPath).parent_path().string());
+
         // Parse optional camera config
         if (config.contains("camera"))
         {
@@ -145,9 +154,8 @@ private:
         // Load scene (App-managed, shared across passes; optional for non-RT passes)
         if (config.contains("scene"))
         {
-            std::string basePath = std::filesystem::absolute(configPath).parent_path().string();
             scene = std::make_unique<RayTracingModel>(device);
-            SceneLoader::loadScene(config["scene"], *scene, basePath);
+            SceneLoader::loadScene(config["scene"], *scene, getConfigDir());
             scene->buildAccelerationStructures();
         }
 
@@ -488,7 +496,21 @@ int main(int argc, char *argv[])
 
     try
     {
-        Application app(configPath, offline);
+        WindowSize ws;
+        {
+            std::ifstream file(configPath);
+            if (!file.is_open())
+                throw std::runtime_error("failed to open config: " + configPath);
+            json config = json::parse(file);
+            if (config.contains("window"))
+            {
+                const auto &w = config["window"];
+                if (w.contains("width"))  ws.width  = w["width"].get<int>();
+                if (w.contains("height")) ws.height = w["height"].get<int>();
+            }
+        }
+
+        Application app(configPath, ws, offline);
         app.run();
     }
     catch (const std::exception &e)

@@ -9,6 +9,7 @@ struct AdamPushConstants
     uint64_t params;
     uint64_t gradients;
     uint count;
+    float learningRate;
 };
 
 [[vk::push_constant]]
@@ -55,7 +56,7 @@ void main(uint tid : SV_DispatchThreadID)
     float meanHat = mean / (1.0 - pow(0.9, float(iteration)));
     float varianceHat = variance / (1.0 - pow(0.999, float(iteration)));
 
-    p[tid] -= 0.01 * meanHat / (sqrt(max(0.0, varianceHat) + 1e-7));
+    p[tid] -= pc.learningRate * meanHat / (sqrt(max(0.0, varianceHat) + 1e-7));
     g[tid] = 0.0;
 
     // Write back

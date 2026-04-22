@@ -8,6 +8,7 @@
 
 #include <cassert>
 #include <functional>
+#include <iosfwd>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -30,6 +31,7 @@ public:
     virtual void createPipelines() = 0;
     virtual void initParams(unsigned int seed) {}
     virtual void resetAdamState() {}
+    virtual void setLearningRate(float lr) {}
 
     virtual void recordForward(VkCommandBuffer cmd,
                                VkBuffer rawInput, uint32_t inputOffset, uint32_t inputStride,
@@ -47,6 +49,11 @@ public:
     virtual uint64_t getParamBufferAddress() const { return 0; }
     virtual VkDeviceSize getParamBufferSize() const { return 0; }
     virtual VkBuffer getParamBuffer() const { return VK_NULL_HANDLE; }
+
+    // Persistence: trainable encodings override both to dump/restore their param buffer.
+    // Non-trainable encodings (Frequency/SH/OneBlob/Identity) use default no-op.
+    virtual void serialize(std::ostream &os) const {}
+    virtual void deserialize(std::istream &is) {}
 
     // EMA inference path: forward with caller-provided param address (shadow/infer weights)
     // instead of the encoding's own training params.

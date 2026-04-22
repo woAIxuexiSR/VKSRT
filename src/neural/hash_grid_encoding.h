@@ -49,8 +49,14 @@ public:
                                  VkBuffer encodedOutput, uint32_t outputOffset, uint32_t outputStride,
                                  uint32_t sampleCount) override;
 
+    void setLearningRate(float lr) override { learningRate = lr; }
+
+    void serialize(std::ostream &os) const override;
+    void deserialize(std::istream &is) override;
+
 private:
     Device &device;
+    float learningRate{0.01f};
 
     int numLevels{16};
     int featuresPerLevel{2};

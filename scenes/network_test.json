@@ -17,7 +17,9 @@
             "hiddenLayers": 2
           },
           "useEMA": true,
-          "emaAlpha": 0.99
+          "emaAlpha": 0.99,
+          "learningRate": 0.01,
+          "savePath": "../network_test.vknn"
         }
       }
     },

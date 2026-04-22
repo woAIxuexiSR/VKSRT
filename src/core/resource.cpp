@@ -37,18 +37,59 @@ StorageBufferResource::~StorageBufferResource()
 
 void StorageBufferResource::update(void *data)
 {
+    update(data, size, 0);
+}
+
+void StorageBufferResource::update(const void *data, VkDeviceSize srcSize, VkDeviceSize dstOffset)
+{
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
-    device.createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+    device.createBuffer(srcSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                        stagingBuffer, stagingBufferMemory);
 
     void *dst;
-    vkMapMemory(device.getDevice(), stagingBufferMemory, 0, size, 0, &dst);
-    memcpy(dst, data, (size_t)size);
+    vkMapMemory(device.getDevice(), stagingBufferMemory, 0, srcSize, 0, &dst);
+    memcpy(dst, data, (size_t)srcSize);
     vkUnmapMemory(device.getDevice(), stagingBufferMemory);
 
     VkCommandBuffer cmd = device.beginSingleTimeCommands();
-    device.copyBuffer(cmd, stagingBuffer, buffer, size);
+    VkBufferCopy region{};
+    region.srcOffset = 0;
+    region.dstOffset = dstOffset;
+    region.size = srcSize;
+    vkCmdCopyBuffer(cmd, stagingBuffer, buffer, 1, &region);
     device.endSingleTimeCommands(cmd);
+
+    vkDestroyBuffer(device.getDevice(), stagingBuffer, nullptr);
+    vkFreeMemory(device.getDevice(), stagingBufferMemory, nullptr);
+}
+
+void StorageBufferResource::download(void *data) const
+{
+    download(data, size, 0);
+}
+
+void StorageBufferResource::download(void *data, VkDeviceSize dstSize, VkDeviceSize srcOffset) const
+{
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+    device.createBuffer(dstSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                        stagingBuffer, stagingBufferMemory);
+
+    VkCommandBuffer cmd = device.beginSingleTimeCommands();
+    VkBufferCopy region{};
+    region.srcOffset = srcOffset;
+    region.dstOffset = 0;
+    region.size = dstSize;
+    vkCmdCopyBuffer(cmd, buffer, stagingBuffer, 1, &region);
+    device.endSingleTimeCommands(cmd);
+
+    void *src;
+    vkMapMemory(device.getDevice(), stagingBufferMemory, 0, dstSize, 0, &src);
+    memcpy(data, src, (size_t)dstSize);
+    vkUnmapMemory(device.getDevice(), stagingBufferMemory);
 
     vkDestroyBuffer(device.getDevice(), stagingBuffer, nullptr);
     vkFreeMemory(device.getDevice(), stagingBufferMemory, nullptr);

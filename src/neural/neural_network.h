@@ -8,6 +8,7 @@
 #include <vector>
 #include <memory>
 #include <cstdint>
+#include <string>
 
 class NeuralNetwork
 {
@@ -37,6 +38,11 @@ public:
                      VkBuffer gtBuffer, uint32_t sampleCount);
 
     float readLoss() const;
+
+    // Persistence: serialize/deserialize trainable params (MLP + encodings).
+    // File format: "VKNN" magic + version + MLP segment + encoding segment (per-encoding payload).
+    void saveParameters(const std::string &path) const;
+    void loadParameters(const std::string &path);
 
     int getTotalParams() const;
     int getInputSize() const;
@@ -69,6 +75,9 @@ private:
 
     bool useEMA{false};
     float emaAlpha{0.99f};
+
+    std::string loadPath;
+    std::string savePath;
 
     std::unique_ptr<StorageBufferResource> inferMlpParamBuffer;
     std::unique_ptr<StorageBufferResource> inferMlpLayerAddrBuffer;

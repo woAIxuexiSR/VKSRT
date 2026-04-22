@@ -1,6 +1,11 @@
 #include "neural_network.h"
 
+#include "paths.h"
+
 #include <cstring>
+#include <fstream>
+#include <iostream>
+#include <sstream>
 #include <stdexcept>
 
 NeuralNetwork::NeuralNetwork(Device &_d, const json &netJson)
@@ -8,6 +13,11 @@ NeuralNetwork::NeuralNetwork(Device &_d, const json &netJson)
 {
     totalRawInputDim = 0;
     totalEncodedDim = 0;
+
+    // Top-level default LR; per-encoding "learningRate" in its own JSON takes precedence
+    // because the encoding ctor already reads that field itself.
+    const bool hasTopLevelLR = netJson.contains("learningRate");
+    const float topLevelLR = hasTopLevelLR ? netJson["learningRate"].get<float>() : 0.01f;
 
     // Build encodings from JSON array (if present)
     if (netJson.contains("encoding") && netJson["encoding"].is_array())
@@ -20,6 +30,9 @@ NeuralNetwork::NeuralNetwork(Device &_d, const json &netJson)
             totalRawInputDim += e->getInputDim();
             outputFieldOffsets.push_back(totalEncodedDim);
             totalEncodedDim += e->getOutputDim();
+            // Apply top-level LR only if the encoding's own JSON didn't specify one.
+            if (hasTopLevelLR && !enc.contains("learningRate"))
+                e->setLearningRate(topLevelLR);
             encodings.push_back(std::move(e));
         }
     }
@@ -47,15 +60,35 @@ NeuralNetwork::NeuralNetwork(Device &_d, const json &netJson)
     layers.push_back({hiddenSize, outputSize});
 
     mlp = std::make_unique<MLP>(device, layers);
+    if (hasTopLevelLR)
+        mlp->setLearningRate(topLevelLR);
 
     if (netJson.contains("useEMA"))   useEMA   = netJson["useEMA"].get<bool>();
     if (netJson.contains("emaAlpha")) emaAlpha = netJson["emaAlpha"].get<float>();
+
+    if (netJson.contains("loadPath")) loadPath = netJson["loadPath"].get<std::string>();
+    if (netJson.contains("savePath")) savePath = netJson["savePath"].get<std::string>();
 
     allocateLossBuffers();
 }
 
 NeuralNetwork::~NeuralNetwork()
 {
+    if (!savePath.empty())
+    {
+        const std::string resolved = configRelPath(savePath);
+        try
+        {
+            saveParameters(resolved);
+            std::cout << "NeuralNetwork: saved parameters to " << resolved << std::endl;
+        }
+        catch (const std::exception &e)
+        {
+            std::cerr << "NeuralNetwork: failed to save parameters to " << resolved
+                      << ": " << e.what() << std::endl;
+        }
+    }
+
     if (lossReadbackMapped)
         vkUnmapMemory(device.getDevice(), lossReadbackMemory);
     if (lossReadbackBuffer != VK_NULL_HANDLE)
@@ -115,6 +148,22 @@ void NeuralNetwork::initWeights(unsigned int seed)
         enc->initParams(encSeed);
         enc->resetAdamState();
         encSeed = encSeed * 2654435761u + 1;
+    }
+
+    if (!loadPath.empty())
+    {
+        const std::string resolved = configRelPath(loadPath);
+        try
+        {
+            loadParameters(resolved);
+            std::cout << "NeuralNetwork: loaded parameters from " << resolved << std::endl;
+        }
+        catch (const std::exception &e)
+        {
+            std::cerr << "NeuralNetwork: failed to load parameters from " << resolved
+                      << ": " << e.what() << std::endl;
+            throw;
+        }
     }
 }
 
@@ -428,4 +477,96 @@ void NeuralNetwork::recordTrain(VkCommandBuffer cmd, VkBuffer inputBuffer,
                          VK_ACCESS_2_HOST_READ_BIT,
                          VK_PIPELINE_STAGE_2_TRANSFER_BIT,
                          VK_PIPELINE_STAGE_2_HOST_BIT);
+}
+
+namespace
+{
+constexpr char kVknnMagic[4] = {'V', 'K', 'N', 'N'};
+constexpr uint32_t kVknnVersion = 1;
+}
+
+void NeuralNetwork::saveParameters(const std::string &path) const
+{
+    std::ofstream os(path, std::ios::binary);
+    if (!os)
+        throw std::runtime_error("saveParameters: cannot open '" + path + "' for writing");
+
+    os.write(kVknnMagic, sizeof(kVknnMagic));
+    const uint32_t version = kVknnVersion;
+    os.write(reinterpret_cast<const char *>(&version), sizeof(version));
+
+    mlp->serialize(os);
+
+    const uint32_t encodingCount = (uint32_t)encodings.size();
+    os.write(reinterpret_cast<const char *>(&encodingCount), sizeof(encodingCount));
+    for (const auto &enc : encodings)
+    {
+        const std::string name = enc->typeName();
+        if (name.size() > 255)
+            throw std::runtime_error("saveParameters: encoding typeName too long: " + name);
+        uint8_t nameLen = (uint8_t)name.size();
+        os.write(reinterpret_cast<const char *>(&nameLen), sizeof(nameLen));
+        os.write(name.data(), (std::streamsize)name.size());
+
+        std::ostringstream payload(std::ios::binary);
+        enc->serialize(payload);
+        const std::string blob = payload.str();
+        uint64_t payloadBytes = (uint64_t)blob.size();
+        os.write(reinterpret_cast<const char *>(&payloadBytes), sizeof(payloadBytes));
+        os.write(blob.data(), (std::streamsize)blob.size());
+    }
+
+    if (!os)
+        throw std::runtime_error("saveParameters: write failed on '" + path + "'");
+}
+
+void NeuralNetwork::loadParameters(const std::string &path)
+{
+    std::ifstream is(path, std::ios::binary);
+    if (!is)
+        throw std::runtime_error("loadParameters: cannot open '" + path + "' for reading");
+
+    char magic[4];
+    is.read(magic, sizeof(magic));
+    if (std::memcmp(magic, kVknnMagic, sizeof(kVknnMagic)) != 0)
+        throw std::runtime_error("loadParameters: bad magic (expected VKNN)");
+
+    uint32_t version = 0;
+    is.read(reinterpret_cast<char *>(&version), sizeof(version));
+    if (version != kVknnVersion)
+        throw std::runtime_error("loadParameters: unsupported version " + std::to_string(version));
+
+    mlp->deserialize(is);
+
+    uint32_t encodingCount = 0;
+    is.read(reinterpret_cast<char *>(&encodingCount), sizeof(encodingCount));
+    if (encodingCount != encodings.size())
+        throw std::runtime_error("loadParameters: encodingCount mismatch (file=" +
+                                 std::to_string(encodingCount) + ", config=" +
+                                 std::to_string(encodings.size()) + ")");
+
+    for (uint32_t i = 0; i < encodingCount; i++)
+    {
+        uint8_t nameLen = 0;
+        is.read(reinterpret_cast<char *>(&nameLen), sizeof(nameLen));
+        std::string name(nameLen, '\0');
+        is.read(name.data(), nameLen);
+
+        const std::string expected = encodings[i]->typeName();
+        if (name != expected)
+            throw std::runtime_error("loadParameters: encoding[" + std::to_string(i) +
+                                     "] type mismatch (file=" + name + ", config=" + expected + ")");
+
+        uint64_t payloadBytes = 0;
+        is.read(reinterpret_cast<char *>(&payloadBytes), sizeof(payloadBytes));
+
+        std::string blob((size_t)payloadBytes, '\0');
+        is.read(blob.data(), (std::streamsize)payloadBytes);
+        if (!is || (uint64_t)is.gcount() != payloadBytes)
+            throw std::runtime_error("loadParameters: short read on encoding[" +
+                                     std::to_string(i) + "] payload");
+
+        std::istringstream payload(blob, std::ios::binary);
+        encodings[i]->deserialize(payload);
+    }
 }
