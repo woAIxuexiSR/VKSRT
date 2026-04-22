@@ -74,9 +74,6 @@ private:
     bool trainEnabled{true};
     float currentLoss{0.0f};
 
-    PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR{nullptr};
-    uint64_t getBufferDeviceAddress(VkBuffer buffer);
-
 public:
     NRCPass(Device &_d, SwapChain &_sc, const json &params);
 

@@ -508,19 +508,10 @@ void RayTracingPipeline::bindDescriptorSets(VkCommandBuffer commandBuffer, int c
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipelineLayout, 0, 1, &descriptorSets[idx], 0, nullptr);
 }
 
-uint64_t RayTracingPipeline::getBufferDeviceAddress(VkBuffer buffer)
-{
-    VkBufferDeviceAddressInfoKHR info{};
-    info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_KHR;
-    info.buffer = buffer;
-    return vkGetBufferDeviceAddressKHR(device.getDevice(), &info);
-}
-
 void RayTracingPipeline::createSBTs(const std::vector<HitSBTRecord> &hitRecords)
 {
     vkCmdTraceRaysKHR = device.loadDeviceFunction<PFN_vkCmdTraceRaysKHR>("vkCmdTraceRaysKHR");
     vkGetRayTracingShaderGroupHandlesKHR = device.loadDeviceFunction<PFN_vkGetRayTracingShaderGroupHandlesKHR>("vkGetRayTracingShaderGroupHandlesKHR");
-    vkGetBufferDeviceAddressKHR = device.loadDeviceFunction<PFN_vkGetBufferDeviceAddressKHR>("vkGetBufferDeviceAddressKHR");
 
     auto props = device.getPhysicalDeviceRTPipelineProperties();
     const uint32_t handleSize = props.shaderGroupHandleSize;
@@ -558,17 +549,17 @@ void RayTracingPipeline::createSBTs(const std::vector<HitSBTRecord> &hitRecords)
     raygenRegion = {};
     raygenRegion.size = handleSizeAligned;
     raygenRegion.stride = handleSizeAligned;
-    raygenRegion.deviceAddress = getBufferDeviceAddress(raygenSBT->getBuffer());
+    raygenRegion.deviceAddress = device.getBufferDeviceAddress(raygenSBT->getBuffer());
 
     missRegion = {};
     missRegion.size = handleSizeAligned;
     missRegion.stride = handleSizeAligned;
-    missRegion.deviceAddress = getBufferDeviceAddress(missSBT->getBuffer());
+    missRegion.deviceAddress = device.getBufferDeviceAddress(missSBT->getBuffer());
 
     hitRegion = {};
     hitRegion.size = hitStride * hitGroupCount;
     hitRegion.stride = hitStride;
-    hitRegion.deviceAddress = getBufferDeviceAddress(hitSBT->getBuffer());
+    hitRegion.deviceAddress = device.getBufferDeviceAddress(hitSBT->getBuffer());
 
     callRegion = {};
 }

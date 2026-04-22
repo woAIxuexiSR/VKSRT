@@ -27,9 +27,6 @@ NRCPass::NRCPass(Device &_d, SwapChain &_sc, const json &params)
                       VK_IMAGE_USAGE_STORAGE_BIT},
       uniformBuffer{_d, sizeof(NRCUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT}
 {
-    vkGetBufferDeviceAddressKHR = device.loadDeviceFunction<PFN_vkGetBufferDeviceAddressKHR>(
-        "vkGetBufferDeviceAddressKHR");
-
     if (params.contains("maxDepth"))
         pushConstants.maxDepth = params["maxDepth"].get<int>();
     if (params.contains("rrDepth"))
@@ -45,88 +42,15 @@ NRCPass::NRCPass(Device &_d, SwapChain &_sc, const json &params)
     pixelCount = extent.width * extent.height;
     trainBatchSize = pixelCount / pushConstants.trainFraction;
 
-    // Build neural network from config
-    int hiddenSize = 64;
-    int hiddenLayers = 2;
-    int mlpOutputSize = 3;
-    int mlpInputSize = 0;
+    json netJson = params.contains("network") ? params["network"] : json::object();
+    network = std::make_unique<NeuralNetwork>(device, netJson);
+    network->initWeights(42);
 
-    NeuralNetwork::Config netCfg{};
-
-    if (params.contains("network"))
-    {
-        const auto &net = params["network"];
-
-        if (net.contains("encoding") && net["encoding"].is_array())
-        {
-            totalRawInputDim = 0;
-            for (auto &enc : net["encoding"])
-            {
-                NeuralNetwork::EncodingConfig ec;
-                ec.type = enc["type"].get<std::string>();
-                ec.inputDim = enc["inputDim"].get<int>();
-                ec.params = enc;
-                netCfg.encodings.push_back(ec);
-                totalRawInputDim += ec.inputDim;
-            }
-
-            for (auto &ec : netCfg.encodings)
-            {
-                if (ec.type == "identity")
-                    mlpInputSize += ec.inputDim;
-                else if (ec.type == "hashgrid")
-                {
-                    int nl = 16, fpl = 2;
-                    if (ec.params.contains("numLevels")) nl = ec.params["numLevels"].get<int>();
-                    if (ec.params.contains("featuresPerLevel")) fpl = ec.params["featuresPerLevel"].get<int>();
-                    mlpInputSize += nl * fpl;
-                }
-                else if (ec.type == "sh")
-                {
-                    int deg = 4;
-                    if (ec.params.contains("degree")) deg = ec.params["degree"].get<int>();
-                    mlpInputSize += (deg + 1) * (deg + 1);
-                }
-                else if (ec.type == "frequency")
-                {
-                    int nf = 6;
-                    if (ec.params.contains("numFreqs")) nf = ec.params["numFreqs"].get<int>();
-                    mlpInputSize += ec.inputDim * nf * 2;
-                }
-                else if (ec.type == "oneblob")
-                {
-                    int nb = 16;
-                    if (ec.params.contains("numBins")) nb = ec.params["numBins"].get<int>();
-                    mlpInputSize += ec.inputDim * nb;
-                }
-            }
-        }
-
-        if (net.contains("mlp"))
-        {
-            const auto &mlp = net["mlp"];
-            if (mlp.contains("outputSize")) mlpOutputSize = mlp["outputSize"].get<int>();
-            if (mlp.contains("hiddenSize")) hiddenSize = mlp["hiddenSize"].get<int>();
-            if (mlp.contains("hiddenLayers")) hiddenLayers = mlp["hiddenLayers"].get<int>();
-        }
-
-        if (net.contains("useEMA"))
-            netCfg.useEMA = net["useEMA"].get<bool>();
-        if (net.contains("emaAlpha"))
-            netCfg.emaAlpha = net["emaAlpha"].get<float>();
-    }
+    totalRawInputDim = network->getTotalRawInputDim();
+    int mlpOutputSize = network->getOutputSize();
 
     assert(mlpOutputSize == 3 && "NRC output must be 3 (RGB radiance)");
-    assert(hiddenSize == 64 && "hiddenSize must be 64");
     assert(totalRawInputDim == 12 && "NRC expects 12 raw input dims (pos+normal+dir+albedo)");
-
-    netCfg.layers.push_back({mlpInputSize, hiddenSize});
-    for (int i = 0; i < hiddenLayers; i++)
-        netCfg.layers.push_back({hiddenSize, hiddenSize});
-    netCfg.layers.push_back({hiddenSize, mlpOutputSize});
-
-    network = std::make_unique<NeuralNetwork>(device, netCfg);
-    network->initWeights(42);
 
     VkBufferUsageFlags bdaFlags = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                                   VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
@@ -142,18 +66,10 @@ NRCPass::NRCPass(Device &_d, SwapChain &_sc, const json &params)
     queryOutputBuffer = std::make_unique<StorageBufferResource>(
         device, (VkDeviceSize)pixelCount * mlpOutputSize * sizeof(float), bdaFlags);
 
-    pushConstants.trainInputAddr = getBufferDeviceAddress(trainInputBuffer->getBuffer());
-    pushConstants.trainGTAddr = getBufferDeviceAddress(trainGTBuffer->getBuffer());
-    pushConstants.trainCounterAddr = getBufferDeviceAddress(trainCounterBuffer->getBuffer());
-    pushConstants.queryInputAddr = getBufferDeviceAddress(queryInputBuffer->getBuffer());
-}
-
-uint64_t NRCPass::getBufferDeviceAddress(VkBuffer buffer)
-{
-    VkBufferDeviceAddressInfoKHR info{};
-    info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_KHR;
-    info.buffer = buffer;
-    return vkGetBufferDeviceAddressKHR(device.getDevice(), &info);
+    pushConstants.trainInputAddr = device.getBufferDeviceAddress(trainInputBuffer->getBuffer());
+    pushConstants.trainGTAddr = device.getBufferDeviceAddress(trainGTBuffer->getBuffer());
+    pushConstants.trainCounterAddr = device.getBufferDeviceAddress(trainCounterBuffer->getBuffer());
+    pushConstants.queryInputAddr = device.getBufferDeviceAddress(queryInputBuffer->getBuffer());
 }
 
 void NRCPass::init()
@@ -365,7 +281,7 @@ PassImageSlot NRCPass::recordCommand(VkCommandBuffer cmd,
     // === Phase 4: Composite ===
 
     NRCCompositePushConstants compositePc{};
-    compositePc.queryOutputAddr = getBufferDeviceAddress(queryOutputBuffer->getBuffer());
+    compositePc.queryOutputAddr = device.getBufferDeviceAddress(queryOutputBuffer->getBuffer());
     compositePc.width = extent.width;
     compositePc.height = extent.height;
 

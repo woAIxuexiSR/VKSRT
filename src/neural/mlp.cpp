@@ -52,9 +52,6 @@ static constexpr size_t kAdamStateSize = sizeof(float) * 2 + sizeof(int32_t);
 MLP::MLP(Device &_d, const std::vector<LayerConfig> &_layers)
     : device(_d), layers(_layers)
 {
-    vkGetBufferDeviceAddressKHR = device.loadDeviceFunction<PFN_vkGetBufferDeviceAddressKHR>(
-        "vkGetBufferDeviceAddressKHR");
-
     if (layers.size() < 2)
         throw std::runtime_error("MLP requires at least 2 layers (input + output)");
     if (layers.front().inputSize <= 0 || layers.front().inputSize > 64)
@@ -75,14 +72,6 @@ MLP::MLP(Device &_d, const std::vector<LayerConfig> &_layers)
 
     allocateStorage();
     buildLayerAddressBuffer();
-}
-
-uint64_t MLP::getBufferDeviceAddress(VkBuffer buffer)
-{
-    VkBufferDeviceAddressInfoKHR info{};
-    info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_KHR;
-    info.buffer = buffer;
-    return vkGetBufferDeviceAddressKHR(device.getDevice(), &info);
 }
 
 void MLP::allocateStorage()
@@ -126,7 +115,7 @@ void MLP::allocateStorage()
             VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
 
-    paramBufferAddr = getBufferDeviceAddress(paramBuffer->getBuffer());
+    paramBufferAddr = device.getBufferDeviceAddress(paramBuffer->getBuffer());
 
     adamState = std::make_unique<StorageBufferResource>(
         device, (VkDeviceSize)totalParamCount * kAdamStateSize,
@@ -208,20 +197,8 @@ void MLP::createPipelines()
 void MLP::recordForward(VkCommandBuffer cmd, VkBuffer input, VkBuffer output,
                         VkBuffer activations, uint32_t sampleCount)
 {
-    MlpForwardPushConstants pc{};
-    pc.layerAddressBuffer = getBufferDeviceAddress(layerAddressBuffer->getBuffer());
-    pc.inputBuffer = getBufferDeviceAddress(input);
-    pc.outputBuffer = getBufferDeviceAddress(output);
-    pc.activationsBuffer = getBufferDeviceAddress(activations);
-    pc.sampleCount = sampleCount;
-    pc.hiddenLayerCount = (uint32_t)hiddenLayerCount;
-    pc.inputSize = (uint32_t)getInputSize();
-    pc.outputSize = (uint32_t)getOutputSize();
-    pc.actStride = (uint32_t)getActStride();
-
-    forwardPipeline->bindPipeline(cmd);
-    forwardPipeline->pushConstants(cmd, &pc);
-    vkCmdDispatch(cmd, (sampleCount + 255) / 256, 1, 1);
+    recordForwardWithLayerAddr(cmd, layerAddressBuffer->getBuffer(),
+                               input, output, activations, sampleCount);
 }
 
 void MLP::recordForwardWithLayerAddr(VkCommandBuffer cmd, VkBuffer layerAddr,
@@ -229,10 +206,10 @@ void MLP::recordForwardWithLayerAddr(VkCommandBuffer cmd, VkBuffer layerAddr,
                                      VkBuffer activations, uint32_t sampleCount)
 {
     MlpForwardPushConstants pc{};
-    pc.layerAddressBuffer = getBufferDeviceAddress(layerAddr);
-    pc.inputBuffer = getBufferDeviceAddress(input);
-    pc.outputBuffer = getBufferDeviceAddress(output);
-    pc.activationsBuffer = getBufferDeviceAddress(activations);
+    pc.layerAddressBuffer = device.getBufferDeviceAddress(layerAddr);
+    pc.inputBuffer = device.getBufferDeviceAddress(input);
+    pc.outputBuffer = device.getBufferDeviceAddress(output);
+    pc.activationsBuffer = device.getBufferDeviceAddress(activations);
     pc.sampleCount = sampleCount;
     pc.hiddenLayerCount = (uint32_t)hiddenLayerCount;
     pc.inputSize = (uint32_t)getInputSize();
@@ -249,12 +226,12 @@ void MLP::recordBackward(VkCommandBuffer cmd, VkBuffer activations,
                          VkBuffer loss, uint32_t sampleCount)
 {
     MlpBackwardPushConstants pc{};
-    pc.layerAddressBuffer = getBufferDeviceAddress(layerAddressBuffer->getBuffer());
-    pc.activationsBuffer = getBufferDeviceAddress(activations);
-    pc.outputBuffer = getBufferDeviceAddress(output);
-    pc.gtBuffer = getBufferDeviceAddress(gt);
-    pc.dInputBuffer = getBufferDeviceAddress(dInput);
-    pc.lossBuffer = getBufferDeviceAddress(loss);
+    pc.layerAddressBuffer = device.getBufferDeviceAddress(layerAddressBuffer->getBuffer());
+    pc.activationsBuffer = device.getBufferDeviceAddress(activations);
+    pc.outputBuffer = device.getBufferDeviceAddress(output);
+    pc.gtBuffer = device.getBufferDeviceAddress(gt);
+    pc.dInputBuffer = device.getBufferDeviceAddress(dInput);
+    pc.lossBuffer = device.getBufferDeviceAddress(loss);
     pc.sampleCount = sampleCount;
     pc.hiddenLayerCount = (uint32_t)hiddenLayerCount;
     pc.inputSize = (uint32_t)getInputSize();
@@ -275,7 +252,7 @@ void MLP::recordZeroGrads(VkCommandBuffer cmd)
 void MLP::recordAdam(VkCommandBuffer cmd)
 {
     AdamPushConstants pc{};
-    pc.adamStates = getBufferDeviceAddress(adamState->getBuffer());
+    pc.adamStates = device.getBufferDeviceAddress(adamState->getBuffer());
     pc.params = paramBufferAddr;
     pc.gradients = paramBufferAddr + gradientOffset;
     pc.count = (uint32_t)totalParamCount;

@@ -4,8 +4,6 @@
 #include "resource.h"
 #include "mlp.h"
 #include "encoding.h"
-#include "encoding_factory.h"
-#include "hash_grid_encoding.h"
 
 #include <vector>
 #include <memory>
@@ -16,26 +14,12 @@ class NeuralNetwork
 public:
     using LayerConfig = MLP::LayerConfig;
 
-    struct EncodingConfig
-    {
-        std::string type;
-        int inputDim;
-        json params;
-    };
-
-    struct Config
-    {
-        std::vector<LayerConfig> layers;
-        std::vector<EncodingConfig> encodings;
-        bool useEMA{false};
-        float emaAlpha{0.99f};
-        // Legacy single-encoding mode:
-        bool useEncoding{false};
-        HashGridEncoding::Config encoding{};
-    };
-
-    NeuralNetwork(Device &device, const std::vector<LayerConfig> &layers);
-    NeuralNetwork(Device &device, const Config &config);
+    // Construct directly from JSON network config.
+    // Expected schema:
+    //   { "encoding": [ {type, inputDim, ...}, ... ],
+    //     "mlp": { "outputSize": N, "hiddenSize": 64, "hiddenLayers": 2 },
+    //     "useEMA": bool, "emaAlpha": float }
+    NeuralNetwork(Device &device, const json &netJson);
     ~NeuralNetwork();
 
     NeuralNetwork(const NeuralNetwork &) = delete;
@@ -77,15 +61,11 @@ private:
     std::unique_ptr<StorageBufferResource> concatBuffer;
     std::unique_ptr<StorageBufferResource> activationsBuffer;
     std::unique_ptr<StorageBufferResource> mlpOutputBuffer;
-    std::unique_ptr<StorageBufferResource> dInputBuffer;
 
     std::unique_ptr<StorageBufferResource> lossGpuBuffer;
     VkBuffer lossReadbackBuffer{VK_NULL_HANDLE};
     VkDeviceMemory lossReadbackMemory{VK_NULL_HANDLE};
     void *lossReadbackMapped{nullptr};
-
-    PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR{nullptr};
-    uint64_t getBufferDeviceAddress(VkBuffer buffer);
 
     bool useEMA{false};
     float emaAlpha{0.99f};

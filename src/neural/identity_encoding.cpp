@@ -1,5 +1,7 @@
 #include "identity_encoding.h"
 
+REGISTER_ENCODING_CPP(IdentityEncoding, "identity");
+
 struct IdentityForwardPushConstants
 {
     uint64_t inputBuffer;
@@ -12,19 +14,10 @@ struct IdentityForwardPushConstants
     uint32_t outputStride;
 };
 
-IdentityEncoding::IdentityEncoding(Device &_d, const Config &cfg)
-    : device(_d), config(cfg)
+IdentityEncoding::IdentityEncoding(Device &_d, const json &params)
+    : device(_d)
 {
-    vkGetBufferDeviceAddressKHR = device.loadDeviceFunction<PFN_vkGetBufferDeviceAddressKHR>(
-        "vkGetBufferDeviceAddressKHR");
-}
-
-uint64_t IdentityEncoding::getBufferDeviceAddress(VkBuffer buffer)
-{
-    VkBufferDeviceAddressInfoKHR info{};
-    info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_KHR;
-    info.buffer = buffer;
-    return vkGetBufferDeviceAddressKHR(device.getDevice(), &info);
+    if (params.contains("inputDim")) inputDim = params["inputDim"].get<int>();
 }
 
 void IdentityEncoding::createPipelines()
@@ -42,10 +35,10 @@ void IdentityEncoding::recordForward(VkCommandBuffer cmd,
                                      uint32_t sampleCount)
 {
     IdentityForwardPushConstants pc{};
-    pc.inputBuffer = getBufferDeviceAddress(rawInput);
-    pc.outputBuffer = getBufferDeviceAddress(encodedOutput);
+    pc.inputBuffer = device.getBufferDeviceAddress(rawInput);
+    pc.outputBuffer = device.getBufferDeviceAddress(encodedOutput);
     pc.sampleCount = sampleCount;
-    pc.dim = (uint32_t)config.inputDim;
+    pc.dim = (uint32_t)inputDim;
     pc.inputFieldOffset = inputOffset;
     pc.inputStride = inputStride;
     pc.outputFieldOffset = outputOffset;

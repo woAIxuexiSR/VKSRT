@@ -96,9 +96,6 @@ private:
     std::unique_ptr<ComputePipeline> backwardPipeline;
     std::unique_ptr<ComputePipeline> adamPipeline;
 
-    PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR{nullptr};
-    uint64_t getBufferDeviceAddress(VkBuffer buffer);
-
     void allocateStorage();
     void buildLayerAddressBuffer();
 };

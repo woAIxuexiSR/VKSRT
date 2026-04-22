@@ -4,17 +4,14 @@
 
 class IdentityEncoding : public Encoding
 {
-public:
-    struct Config
-    {
-        int inputDim{3};
-    };
+    REGISTER_ENCODING(IdentityEncoding);
 
-    IdentityEncoding(Device &device, const Config &cfg);
+public:
+    IdentityEncoding(Device &device, const json &params);
     ~IdentityEncoding() = default;
 
-    int getInputDim() const override { return config.inputDim; }
-    int getOutputDim() const override { return config.inputDim; }
+    int getInputDim() const override { return inputDim; }
+    int getOutputDim() const override { return inputDim; }
     bool hasTrainableParams() const override { return false; }
     std::string typeName() const override { return "identity"; }
 
@@ -32,9 +29,6 @@ public:
 
 private:
     Device &device;
-    Config config;
+    int inputDim{3};
     std::unique_ptr<ComputePipeline> forwardPipeline;
-
-    PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR{nullptr};
-    uint64_t getBufferDeviceAddress(VkBuffer buffer);
 };

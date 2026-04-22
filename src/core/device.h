@@ -139,6 +139,8 @@ public:
     VkCommandBuffer beginSingleTimeCommands();
     void endSingleTimeCommands(VkCommandBuffer commandBuffer);
 
+    uint64_t getBufferDeviceAddress(VkBuffer buffer) const;
+
     template <typename T>
     T loadInstanceFunction(const std::string &name) const
     {

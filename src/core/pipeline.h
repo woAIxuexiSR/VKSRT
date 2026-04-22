@@ -149,9 +149,6 @@ protected:
 
     PFN_vkCmdTraceRaysKHR vkCmdTraceRaysKHR{nullptr};
     PFN_vkGetRayTracingShaderGroupHandlesKHR vkGetRayTracingShaderGroupHandlesKHR{nullptr};
-    PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR{nullptr};
-
-    uint64_t getBufferDeviceAddress(VkBuffer buffer);
 
     void createPipeline() override;
     void createSBTs(const std::vector<HitSBTRecord> &hitRecords);

@@ -4,19 +4,14 @@
 
 class OneBlobEncoding : public Encoding
 {
-public:
-    struct Config
-    {
-        int inputDim{3};
-        int numBins{16};
-        float sigma{0.0f};
-    };
+    REGISTER_ENCODING(OneBlobEncoding);
 
-    OneBlobEncoding(Device &device, const Config &cfg);
+public:
+    OneBlobEncoding(Device &device, const json &params);
     ~OneBlobEncoding() = default;
 
-    int getInputDim() const override { return config.inputDim; }
-    int getOutputDim() const override { return config.inputDim * config.numBins; }
+    int getInputDim() const override { return inputDim; }
+    int getOutputDim() const override { return inputDim * numBins; }
     bool hasTrainableParams() const override { return false; }
     std::string typeName() const override { return "oneblob"; }
 
@@ -34,9 +29,8 @@ public:
 
 private:
     Device &device;
-    Config config;
+    int inputDim{3};
+    int numBins{16};
+    float sigma{0.0f};
     std::unique_ptr<ComputePipeline> forwardPipeline;
-
-    PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR{nullptr};
-    uint64_t getBufferDeviceAddress(VkBuffer buffer);
 };

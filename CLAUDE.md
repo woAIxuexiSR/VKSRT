@@ -18,77 +18,15 @@
 
 ## 架构设计
 
-### 目录结构
-```
-src/
-├── core/           # Vulkan 核心抽象（从 EasyVulkan backend 移植）
-│   ├── device.h/cpp
-│   ├── swap_chain.h/cpp
-│   ├── window.h/cpp
-│   ├── resource.h/cpp
-│   └── pipeline.h/cpp
-├── passes/         # 渲染 Pass（每个 Pass 一个子文件夹，shader 放同目录）
-│   ├── pass_base.h/cpp   # PassBase 基类 + RenderPassFactory + REGISTER_PASS 宏
-│   ├── path_tracing/     # Path Tracing（多次弹射、NEE、MIS、G-buffer 写入）
-│   │   ├── path_tracing_pass.h/cpp
-│   │   └── path_tracing.slang  # 单文件 3 entry points (raygen/miss/closesthit)
-│   ├── taa/              # TAA（内置 accumulate 模式，reprojection + neighborhood clamping）
-│   │   ├── taa_pass.h/cpp
-│   │   └── taa.slang
-│   ├── bilateral/        # 双边滤波降噪（基于 G-buffer 的边缘保持滤波）
-│   │   ├── bilateral_pass.h/cpp
-│   │   └── bilateral.slang
-│   ├── tonemap/          # ACES 色调映射
-│   │   ├── tonemap_pass.h/cpp
-│   │   └── tonemap.slang
-│   ├── blit/             # 全屏 blit，将 RT 结果绘制到 swapchain
-│   │   ├── blit_pass.h/cpp
-│   │   └── blit.slang
-│   ├── ray_tracing/      # 可视化调试工具（Material/Position/Normal/UV 模式）
-│   │   ├── ray_tracing_pass.h/cpp
-│   │   └── ray_tracing.slang
-│   ├── light_tracing/    # Light Tracing（光子发射 + splat + compose）
-│   │   ├── light_tracing_pass.h/cpp
-│   │   ├── light_tracing.slang
-│   │   └── lt_compose.slang
-│   ├── wavefront_pt/     # Wavefront Path Tracing（阶段式 compute，ray query）
-│   │   ├── wavefront_pt_pass.h/cpp
-│   │   ├── wf_generate.slang
-│   │   ├── wf_prepare_indirect.slang
-│   │   ├── wf_extend.slang
-│   │   ├── wf_shade.slang
-│   │   ├── wf_shadow.slang
-│   │   └── wf_accumulate.slang
-│   ├── branch_pt/        # Branch PT（树状路径分叉 + stylized rendering）
-│   │   ├── branch_pt_pass.h/cpp
-│   │   ├── brpt_advance.slang
-│   │   ├── brpt_propagate.slang
-│   │   └── brpt_accumulate.slang
-│   └── network_test/     # 神经网络训练/推理可视化测试（多 encoding 拼接 + MLP）
-│       ├── network_test_pass.h/cpp
-│       ├── mlp_data_gen.slang
-│       └── write_image.slang
-├── neural/         # 模块化神经网络（GPU compute shader 训练/推理）
-│   ├── encoding.h             # Encoding 抽象基类（strided forward/backward）
-│   ├── encoding_factory.h/cpp # createEncoding() 工厂函数
-│   ├── hash_grid_encoding.h/cpp   # 多分辨率哈希网格编码 (trainable)
-│   ├── frequency_encoding.h/cpp   # NeRF 位置编码 sin/cos
-│   ├── sh_encoding.h/cpp          # 球谐基函数编码
-│   ├── oneblob_encoding.h/cpp     # 高斯 blob 编码
-│   ├── identity_encoding.h/cpp    # 直通编码
-│   ├── mlp.h/cpp              # MLP forward/backward/Adam pipeline
-│   └── neural_network.h/cpp   # 编排器：Encoding[] + MLP + concat buffer + dispatch 链
-├── scene/          # 场景管理
-│   ├── camera.h/cpp           # 从 EasyVulkan model/camera 移植，含 prevViewProj
-│   ├── gbuffer.h              # App 管理的 G-buffer（position/normal/albedo）
-│   ├── ray_tracing_model.h/cpp # RT 场景（加速结构 + 几何数据 + descriptor helpers）
-│   └── scene_loader.h/cpp     # 场景加载（从 JSON config 构建 RayTracingModel）
-├── gui/            # ImGui 集成
-│   └── imgui_renderer.h/cpp  # 从 EasyVulkan 移植
-└── main.cpp
-```
-Shader 编译：CMake 从 `src/passes/` 子目录收集 `.slang` 文件，编译输出到 `build/shaders/`。
-passes 编译为独立静态库，链接到 main。
+### 目录分工
+- `src/core/` — Vulkan 核心抽象（device / swap_chain / window / resource / pipeline），从 EasyVulkan backend 移植。
+- `src/passes/` — 渲染 Pass。每个 Pass 一个子目录，同目录存放其 `.slang` shader（shader 与 Pass 代码就近维护）。顶层 `pass_base.h/cpp` 提供基类、`RenderPassFactory`、`REGISTER_PASS` 宏。
+- `src/neural/` — 模块化神经网络（GPU compute：Encoding 基类 + EncodingFactory + 若干 encoding 实现 + MLP + NeuralNetwork 编排器）。详见 `src/neural/README.md`。
+- `src/scene/` — 场景管理（camera、gbuffer、ray_tracing_model、scene_loader）。
+- `src/gui/` — ImGui 集成。
+- `src/main.cpp` — 程序入口。
+
+Shader 编译：CMake 从 `src/passes/` 子目录和 `src/shaders/neural/` 收集 `.slang`，编译到 `build/shaders/`。passes 编译为独立静态库，用 `/WHOLEARCHIVE` 链接以保留自注册静态初始化。
 
 ### 链状 RenderPass
 - **工厂模式**: RenderPassFactory + REGISTER_PASS 自注册宏，main.cpp 通过 factory 创建 pass
@@ -103,58 +41,14 @@ passes 编译为独立静态库，链接到 main。
 
 ## 里程碑
 
-### M1: 项目搭建 [已完成]
-- CMake + vcpkg + 目录结构
-- Vulkan 核心封装（从 EasyVulkan 移植：device, swap_chain, window, resource, pipeline）
-- ImGui 集成
-- 空窗口能编译运行
-
-### M2: 光栅化三角形 [已完成]
-- 实现 Pass 框架（pass_base.h 基类 + 链状执行）
-- passes/triangle/ 实现三角形绘制（Dynamic Rendering）
-- 验证渲染管线跑通
-
-### M3: 光追 Cornell Box（简单着色）[已完成]
-- [x] RT 场景与加速结构（ray_tracing_model.h，BLAS/TLAS）
-- [x] RT Pass（ray_tracing_pass.h/cpp + ray_tracing.slang，单文件多 entry point）
-- [x] Blit Pass（blit_pass.h/cpp + blit.slang，全屏三角形将 RT 结果绘制到 swapchain）
-- [x] Tonemap Pass（tonemap_pass.h/cpp + tonemap.slang，ACES 色调映射）
-- [x] 相机控制（camera.h/cpp，支持输入和多帧累积重置）
-- [x] Pass 架构重构（工厂模式 + PassImageSlot 链式传递）
-
-### M4: Path Tracing Cornell Box [已完成]
-- [x] Accumulate Pass 解耦（独立帧累积 compute pass，后合并进 TAA Pass）
-- [x] PassImageSlot 链式动态传递重构（disabled 零开销透传）
-- [x] 相机 UI 解耦（Application 管理，独立 ImGui section）
-- [x] 完整 Path Tracing（多次弹射、Russian Roulette、BRDF 采样）
-- [x] StructuredBuffer<float3> 对齐修复
-- [x] ray_tracing pass 改为可视化调试工具
-- [x] Cornell Box 经典场景（两个 box + Metal 镜面墙）
-- [x] 截图功能（Save Image to PNG）
-
-### M5: 高级渲染特性 [已完成]
-- [x] NEE（Next Event Estimation + MIS）
-- [x] 双边滤波 Pass（Bilateral Denoise）
-- [x] TAA Pass（Temporal Anti-Aliasing）
-
-### M6: 其他积分方式 [已完成]
-- [x] Light Tracer（光子发射 + float atomic splat + compose）
-- [x] Wavefront Path Tracing（6 compute kernels + atomic compaction + indirect dispatch）
-
-### M7: Stylized 渲染 [已完成]
-- [x] Branch MC
-- [x] GGX microfacet BRDF（Metal GGX VNDF + Lambertian diffuse+specular）
-- [x] 离线渲染模式（--offline + PNG 输出）
-- [x] 材质类型封装（isDeltaBRDF/isEmissive/canTransmit）
-
-### M8: GPU 神经网络基础设施 [已完成]
-- [x] Pure MLP forward/backward/Adam（Slang compute shader，手写反向）
-- [x] HashGrid encoding（多分辨率哈希网格，trainable，InterlockedAdd 梯度）
-- [x] 多 Encoding 架构（Encoding 基类 + 工厂模式，strided concat buffer）
-- [x] 5 种 Encoding：HashGrid / Frequency / SH / OneBlob / Identity
-- [x] NeuralNetwork 编排器（多 encoding forward → MLP → backward → Adam）
-- [x] network_test pass（可视化训练/推理，多 encoding 拼接验证）
-- [x] Neural Radiance Cache（NRC，嵌入 path tracing）
+- **M1** [已完成] — 项目搭建：CMake + vcpkg、Vulkan 核心封装、ImGui、空窗口。
+- **M2** [已完成] — 光栅化三角形：Pass 框架 + Dynamic Rendering。
+- **M3** [已完成] — 光追 Cornell Box（简单着色）：BLAS/TLAS、RT Pass（单文件多 entry）、Blit、ACES Tonemap、相机与多帧累积重置、工厂化 Pass + PassImageSlot 链式传递。
+- **M4** [已完成] — Path Tracing：独立 Accumulate → 合并进 TAA、完整 PT（多弹射 + RR + BRDF 采样）、ray_tracing 降级为可视化调试、Cornell Box 场景 + 截图。
+- **M5** [已完成] — 高级渲染：NEE + MIS、双边滤波、TAA。
+- **M6** [已完成] — 其他积分方式：Light Tracer（atomic splat）、Wavefront PT（6 compute kernel + atomic compaction + indirect dispatch）。
+- **M7** [已完成] — Stylized：Branch MC、GGX microfacet BRDF、离线模式（--offline + PNG）、材质类型封装。
+- **M8** [已完成] — GPU 神经网络：MLP forward/backward/Adam、5 种 Encoding（HashGrid / Frequency / SH / OneBlob / Identity）+ 自注册工厂、NeuralNetwork 编排器、network_test pass、NRC（嵌入 PT）。
 
 ## Build Commands
 ```bash

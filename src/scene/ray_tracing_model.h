@@ -43,7 +43,6 @@ private:
     VkAccelerationStructureKHR tlas{VK_NULL_HANDLE};
     std::unique_ptr<StorageBufferResource> tlasBuffer;
 
-    PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR;
     PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR;
     PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR;
     PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetAccelerationStructureDeviceAddressKHR;
@@ -51,7 +50,6 @@ private:
     PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR;
 
     void loadFunctions();
-    uint64_t getBufferDeviceAddress(VkBuffer buffer);
     uint32_t alignedSize(uint32_t value, uint32_t alignment);
 
     void createBLAS();

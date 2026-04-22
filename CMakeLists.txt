@@ -192,11 +192,13 @@ target_link_libraries(main PRIVATE
     passes
 )
 
-# Force linker to include all symbols from passes lib (needed for self-registration)
+# Force linker to include all symbols from passes and core libs (needed for self-registration
+# of passes and encodings)
 if(MSVC)
-    target_link_options(main PRIVATE "/WHOLEARCHIVE:passes")
+    target_link_options(main PRIVATE "/WHOLEARCHIVE:passes" "/WHOLEARCHIVE:core")
 else()
-    target_link_libraries(main PRIVATE -Wl,--whole-archive passes -Wl,--no-whole-archive)
+    target_link_libraries(main PRIVATE
+        -Wl,--whole-archive passes core -Wl,--no-whole-archive)
 endif()
 
 add_dependencies(main shaders)

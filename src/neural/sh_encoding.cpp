@@ -2,6 +2,8 @@
 
 #include <stdexcept>
 
+REGISTER_ENCODING_CPP(SHEncoding, "sh");
+
 struct SHForwardPushConstants
 {
     uint64_t inputBuffer;
@@ -14,24 +16,17 @@ struct SHForwardPushConstants
     uint32_t outputStride;
 };
 
-SHEncoding::SHEncoding(Device &_d, const Config &cfg)
-    : device(_d), config(cfg)
+SHEncoding::SHEncoding(Device &_d, const json &params)
+    : device(_d)
 {
-    if (cfg.inputDim != 3)
+    int inputDim = 3;
+    if (params.contains("inputDim")) inputDim = params["inputDim"].get<int>();
+    if (params.contains("degree"))   degree = params["degree"].get<int>();
+
+    if (inputDim != 3)
         throw std::runtime_error("SHEncoding: inputDim must be 3");
-    if (cfg.degree < 0 || cfg.degree > 4)
+    if (degree < 0 || degree > 4)
         throw std::runtime_error("SHEncoding: degree must be in [0, 4]");
-
-    vkGetBufferDeviceAddressKHR = device.loadDeviceFunction<PFN_vkGetBufferDeviceAddressKHR>(
-        "vkGetBufferDeviceAddressKHR");
-}
-
-uint64_t SHEncoding::getBufferDeviceAddress(VkBuffer buffer)
-{
-    VkBufferDeviceAddressInfoKHR info{};
-    info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_KHR;
-    info.buffer = buffer;
-    return vkGetBufferDeviceAddressKHR(device.getDevice(), &info);
 }
 
 void SHEncoding::createPipelines()
@@ -49,10 +44,10 @@ void SHEncoding::recordForward(VkCommandBuffer cmd,
                                uint32_t sampleCount)
 {
     SHForwardPushConstants pc{};
-    pc.inputBuffer = getBufferDeviceAddress(rawInput);
-    pc.outputBuffer = getBufferDeviceAddress(encodedOutput);
+    pc.inputBuffer = device.getBufferDeviceAddress(rawInput);
+    pc.outputBuffer = device.getBufferDeviceAddress(encodedOutput);
     pc.sampleCount = sampleCount;
-    pc.degree = (uint32_t)config.degree;
+    pc.degree = (uint32_t)degree;
     pc.inputFieldOffset = inputOffset;
     pc.inputStride = inputStride;
     pc.outputFieldOffset = outputOffset;

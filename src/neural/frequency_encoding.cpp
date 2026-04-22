@@ -2,6 +2,8 @@
 
 #include <stdexcept>
 
+REGISTER_ENCODING_CPP(FrequencyEncoding, "frequency");
+
 struct FrequencyForwardPushConstants
 {
     uint64_t inputBuffer;
@@ -15,24 +17,16 @@ struct FrequencyForwardPushConstants
     uint32_t outputStride;
 };
 
-FrequencyEncoding::FrequencyEncoding(Device &_d, const Config &cfg)
-    : device(_d), config(cfg)
+FrequencyEncoding::FrequencyEncoding(Device &_d, const json &params)
+    : device(_d)
 {
-    if (cfg.inputDim < 1 || cfg.inputDim > 4)
+    if (params.contains("inputDim")) inputDim = params["inputDim"].get<int>();
+    if (params.contains("numFreqs")) numFreqs = params["numFreqs"].get<int>();
+
+    if (inputDim < 1 || inputDim > 4)
         throw std::runtime_error("FrequencyEncoding: inputDim must be in [1, 4]");
-    if (cfg.numFreqs < 1 || cfg.numFreqs > 12)
+    if (numFreqs < 1 || numFreqs > 12)
         throw std::runtime_error("FrequencyEncoding: numFreqs must be in [1, 12]");
-
-    vkGetBufferDeviceAddressKHR = device.loadDeviceFunction<PFN_vkGetBufferDeviceAddressKHR>(
-        "vkGetBufferDeviceAddressKHR");
-}
-
-uint64_t FrequencyEncoding::getBufferDeviceAddress(VkBuffer buffer)
-{
-    VkBufferDeviceAddressInfoKHR info{};
-    info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_KHR;
-    info.buffer = buffer;
-    return vkGetBufferDeviceAddressKHR(device.getDevice(), &info);
 }
 
 void FrequencyEncoding::createPipelines()
@@ -50,11 +44,11 @@ void FrequencyEncoding::recordForward(VkCommandBuffer cmd,
                                       uint32_t sampleCount)
 {
     FrequencyForwardPushConstants pc{};
-    pc.inputBuffer = getBufferDeviceAddress(rawInput);
-    pc.outputBuffer = getBufferDeviceAddress(encodedOutput);
+    pc.inputBuffer = device.getBufferDeviceAddress(rawInput);
+    pc.outputBuffer = device.getBufferDeviceAddress(encodedOutput);
     pc.sampleCount = sampleCount;
-    pc.inputDim = (uint32_t)config.inputDim;
-    pc.numFreqs = (uint32_t)config.numFreqs;
+    pc.inputDim = (uint32_t)inputDim;
+    pc.numFreqs = (uint32_t)numFreqs;
     pc.inputFieldOffset = inputOffset;
     pc.inputStride = inputStride;
     pc.outputFieldOffset = outputOffset;

@@ -4,6 +4,8 @@
 #include <cmath>
 #include <stdexcept>
 
+REGISTER_ENCODING_CPP(HashGridEncoding, "hashgrid");
+
 struct HashGridForwardPushConstants
 {
     uint64_t inputBuffer;
@@ -50,26 +52,30 @@ struct AdamPushConstants
 
 static constexpr size_t kAdamStateSize = sizeof(float) * 2 + sizeof(int32_t);
 
-HashGridEncoding::HashGridEncoding(Device &_d, const Config &cfg)
-    : device(_d), config(cfg)
+HashGridEncoding::HashGridEncoding(Device &_d, const json &params)
+    : device(_d)
 {
-    if (cfg.numLevels <= 0 || cfg.numLevels > 32)
+    if (params.contains("numLevels"))          numLevels = params["numLevels"].get<int>();
+    if (params.contains("featuresPerLevel"))   featuresPerLevel = params["featuresPerLevel"].get<int>();
+    if (params.contains("tableSize"))          tableSize = params["tableSize"].get<int>();
+    if (params.contains("coarsestResolution")) coarsestResolution = params["coarsestResolution"].get<int>();
+    if (params.contains("finestResolution"))   finestResolution = params["finestResolution"].get<int>();
+    if (params.contains("inputDim"))           inputDim = params["inputDim"].get<int>();
+
+    if (numLevels <= 0 || numLevels > 32)
         throw std::runtime_error("HashGridEncoding: numLevels must be in (0, 32]");
-    if (cfg.featuresPerLevel != 1 && cfg.featuresPerLevel != 2 && cfg.featuresPerLevel != 4)
+    if (featuresPerLevel != 1 && featuresPerLevel != 2 && featuresPerLevel != 4)
         throw std::runtime_error("HashGridEncoding: featuresPerLevel must be 1, 2, or 4");
-    if (cfg.tableSize <= 0 || (cfg.tableSize & (cfg.tableSize - 1)) != 0)
+    if (tableSize <= 0 || (tableSize & (tableSize - 1)) != 0)
         throw std::runtime_error("HashGridEncoding: tableSize must be a power of two");
-    if (cfg.coarsestResolution <= 0 || cfg.finestResolution < cfg.coarsestResolution)
+    if (coarsestResolution <= 0 || finestResolution < coarsestResolution)
         throw std::runtime_error("HashGridEncoding: invalid resolution range");
-    if (cfg.inputDim < 1 || cfg.inputDim > 4)
+    if (inputDim < 1 || inputDim > 4)
         throw std::runtime_error("HashGridEncoding: inputDim must be in [1, 4]");
 
-    vkGetBufferDeviceAddressKHR = device.loadDeviceFunction<PFN_vkGetBufferDeviceAddressKHR>(
-        "vkGetBufferDeviceAddressKHR");
-
-    perLevelScale = (cfg.numLevels > 1)
-        ? std::exp(std::log((float)cfg.finestResolution / (float)cfg.coarsestResolution)
-                   / (float)(cfg.numLevels - 1))
+    perLevelScale = (numLevels > 1)
+        ? std::exp(std::log((float)finestResolution / (float)coarsestResolution)
+                   / (float)(numLevels - 1))
         : 1.0f;
 
     tableBufferSize = (VkDeviceSize)getTotalFeatures() * sizeof(float);
@@ -87,22 +93,14 @@ HashGridEncoding::HashGridEncoding(Device &_d, const Config &cfg)
             VK_BUFFER_USAGE_TRANSFER_DST_BIT |
             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
 
-    tableAddr = getBufferDeviceAddress(tableBuffer->getBuffer());
-    tableGradAddr = getBufferDeviceAddress(tableGradBuffer->getBuffer());
+    tableAddr = device.getBufferDeviceAddress(tableBuffer->getBuffer());
+    tableGradAddr = device.getBufferDeviceAddress(tableGradBuffer->getBuffer());
 
     adamState = std::make_unique<StorageBufferResource>(
         device, (VkDeviceSize)getTotalFeatures() * kAdamStateSize,
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
             VK_BUFFER_USAGE_TRANSFER_DST_BIT |
             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
-}
-
-uint64_t HashGridEncoding::getBufferDeviceAddress(VkBuffer buffer)
-{
-    VkBufferDeviceAddressInfoKHR info{};
-    info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_KHR;
-    info.buffer = buffer;
-    return vkGetBufferDeviceAddressKHR(device.getDevice(), &info);
 }
 
 void HashGridEncoding::initParams(unsigned int seed)
@@ -151,15 +149,15 @@ void HashGridEncoding::recordForward(VkCommandBuffer cmd,
                                      uint32_t sampleCount)
 {
     HashGridForwardPushConstants pc{};
-    pc.inputBuffer = getBufferDeviceAddress(rawInput);
-    pc.outputBuffer = getBufferDeviceAddress(encodedOutput);
+    pc.inputBuffer = device.getBufferDeviceAddress(rawInput);
+    pc.outputBuffer = device.getBufferDeviceAddress(encodedOutput);
     pc.hashTable = tableAddr;
     pc.sampleCount = sampleCount;
-    pc.inputDim = (uint32_t)config.inputDim;
-    pc.numLevels = (uint32_t)config.numLevels;
-    pc.featuresPerLevel = (uint32_t)config.featuresPerLevel;
-    pc.tableSize = (uint32_t)config.tableSize;
-    pc.coarsestResolution = (float)config.coarsestResolution;
+    pc.inputDim = (uint32_t)inputDim;
+    pc.numLevels = (uint32_t)numLevels;
+    pc.featuresPerLevel = (uint32_t)featuresPerLevel;
+    pc.tableSize = (uint32_t)tableSize;
+    pc.coarsestResolution = (float)coarsestResolution;
     pc.perLevelScale = perLevelScale;
     pc.inputFieldOffset = inputOffset;
     pc.inputStride = inputStride;
@@ -178,15 +176,15 @@ void HashGridEncoding::recordForwardWithParams(VkCommandBuffer cmd,
                                                uint32_t sampleCount)
 {
     HashGridForwardPushConstants pc{};
-    pc.inputBuffer = getBufferDeviceAddress(rawInput);
-    pc.outputBuffer = getBufferDeviceAddress(encodedOutput);
+    pc.inputBuffer = device.getBufferDeviceAddress(rawInput);
+    pc.outputBuffer = device.getBufferDeviceAddress(encodedOutput);
     pc.hashTable = paramAddr;
     pc.sampleCount = sampleCount;
-    pc.inputDim = (uint32_t)config.inputDim;
-    pc.numLevels = (uint32_t)config.numLevels;
-    pc.featuresPerLevel = (uint32_t)config.featuresPerLevel;
-    pc.tableSize = (uint32_t)config.tableSize;
-    pc.coarsestResolution = (float)config.coarsestResolution;
+    pc.inputDim = (uint32_t)inputDim;
+    pc.numLevels = (uint32_t)numLevels;
+    pc.featuresPerLevel = (uint32_t)featuresPerLevel;
+    pc.tableSize = (uint32_t)tableSize;
+    pc.coarsestResolution = (float)coarsestResolution;
     pc.perLevelScale = perLevelScale;
     pc.inputFieldOffset = inputOffset;
     pc.inputStride = inputStride;
@@ -204,15 +202,15 @@ void HashGridEncoding::recordBackward(VkCommandBuffer cmd,
                                       uint32_t sampleCount)
 {
     HashGridBackwardPushConstants pc{};
-    pc.dEncodedBuffer = getBufferDeviceAddress(dEncoded);
-    pc.inputBuffer = getBufferDeviceAddress(rawInput);
+    pc.dEncodedBuffer = device.getBufferDeviceAddress(dEncoded);
+    pc.inputBuffer = device.getBufferDeviceAddress(rawInput);
     pc.hashTableGrad = tableGradAddr;
     pc.sampleCount = sampleCount;
-    pc.inputDim = (uint32_t)config.inputDim;
-    pc.numLevels = (uint32_t)config.numLevels;
-    pc.featuresPerLevel = (uint32_t)config.featuresPerLevel;
-    pc.tableSize = (uint32_t)config.tableSize;
-    pc.coarsestResolution = (float)config.coarsestResolution;
+    pc.inputDim = (uint32_t)inputDim;
+    pc.numLevels = (uint32_t)numLevels;
+    pc.featuresPerLevel = (uint32_t)featuresPerLevel;
+    pc.tableSize = (uint32_t)tableSize;
+    pc.coarsestResolution = (float)coarsestResolution;
     pc.perLevelScale = perLevelScale;
     pc.dEncodedFieldOffset = dOffset;
     pc.dEncodedStride = dStride;
@@ -232,7 +230,7 @@ void HashGridEncoding::recordZeroGrads(VkCommandBuffer cmd)
 void HashGridEncoding::recordAdam(VkCommandBuffer cmd)
 {
     AdamPushConstants pc{};
-    pc.adamStates = getBufferDeviceAddress(adamState->getBuffer());
+    pc.adamStates = device.getBufferDeviceAddress(adamState->getBuffer());
     pc.params = tableAddr;
     pc.gradients = tableGradAddr;
     pc.count = (uint32_t)getTotalFeatures();

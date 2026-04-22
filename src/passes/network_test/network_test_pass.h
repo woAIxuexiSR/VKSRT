@@ -33,9 +33,6 @@ private:
     float currentLoss{0.0f};
     uint32_t frameIndex{0};
 
-    PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR{nullptr};
-    uint64_t getBufferDeviceAddress(VkBuffer buffer);
-
 public:
     NetworkTestPass(Device &_d, SwapChain &_sc, const json &params);
 

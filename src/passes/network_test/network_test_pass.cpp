@@ -31,126 +31,19 @@ NetworkTestPass::NetworkTestPass(Device &_d, SwapChain &_sc, const json &params)
       outputImage{_d, VK_FORMAT_R8G8B8A8_UNORM, VkExtent2D{256, 256},
                   VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT}
 {
-    vkGetBufferDeviceAddressKHR = device.loadDeviceFunction<PFN_vkGetBufferDeviceAddressKHR>(
-        "vkGetBufferDeviceAddressKHR");
-
     if (params.contains("batchSize"))
         batchSize = params["batchSize"].get<int>();
     if (params.contains("showGT"))
         showGT = params["showGT"].get<bool>();
 
-    int hiddenSize = 64;
-    int hiddenLayers = 2;
-    int mlpInputSize = 2;
-    int mlpOutputSize = 3;
-
-    NeuralNetwork::Config netCfg{};
-
-    if (params.contains("network"))
-    {
-        const auto &net = params["network"];
-
-        // New multi-encoding mode: "encoding" is an array
-        if (net.contains("encoding") && net["encoding"].is_array())
-        {
-            for (auto &enc : net["encoding"])
-            {
-                NeuralNetwork::EncodingConfig ec;
-                ec.type = enc["type"].get<std::string>();
-                ec.inputDim = enc["inputDim"].get<int>();
-                ec.params = enc;
-                netCfg.encodings.push_back(ec);
-            }
-        }
-        // Legacy single-encoding mode: "encoding" is an object
-        else if (net.contains("encoding") && net["encoding"].is_object())
-        {
-            const auto &enc = net["encoding"];
-            netCfg.useEncoding = true;
-            if (enc.contains("numLevels"))          netCfg.encoding.numLevels = enc["numLevels"].get<int>();
-            if (enc.contains("featuresPerLevel"))   netCfg.encoding.featuresPerLevel = enc["featuresPerLevel"].get<int>();
-            if (enc.contains("tableSize"))          netCfg.encoding.tableSize = enc["tableSize"].get<int>();
-            if (enc.contains("coarsestResolution")) netCfg.encoding.coarsestResolution = enc["coarsestResolution"].get<int>();
-            if (enc.contains("finestResolution"))   netCfg.encoding.finestResolution = enc["finestResolution"].get<int>();
-            if (enc.contains("inputDim"))           netCfg.encoding.inputDim = enc["inputDim"].get<int>();
-            mlpInputSize = netCfg.encoding.numLevels * netCfg.encoding.featuresPerLevel;
-        }
-
-        if (net.contains("mlp"))
-        {
-            const auto &mlp = net["mlp"];
-            if (mlp.contains("outputSize"))   mlpOutputSize = mlp["outputSize"].get<int>();
-            if (mlp.contains("hiddenSize"))   hiddenSize = mlp["hiddenSize"].get<int>();
-            if (mlp.contains("hiddenLayers")) hiddenLayers = mlp["hiddenLayers"].get<int>();
-            if (!netCfg.useEncoding && netCfg.encodings.empty() && mlp.contains("inputSize"))
-                mlpInputSize = mlp["inputSize"].get<int>();
-        }
-
-        if (net.contains("useEMA"))
-            netCfg.useEMA = net["useEMA"].get<bool>();
-        if (net.contains("emaAlpha"))
-            netCfg.emaAlpha = net["emaAlpha"].get<float>();
-    }
-
-    assert(mlpOutputSize == 3 && "network_test requires outputSize == 3");
-    assert(hiddenSize == 64 && "hiddenSize must be 64");
-
-    // For multi-encoding, compute mlpInputSize from encoding output dims
-    if (!netCfg.encodings.empty())
-    {
-        mlpInputSize = 0;
-        totalRawInputDim = 0;
-        for (auto &ec : netCfg.encodings)
-            totalRawInputDim += ec.inputDim;
-        for (auto &ec : netCfg.encodings)
-        {
-            if (ec.type == "identity")
-                mlpInputSize += ec.inputDim;
-            else if (ec.type == "hashgrid")
-            {
-                int numLevels = 16, featuresPerLevel = 2;
-                if (ec.params.contains("numLevels")) numLevels = ec.params["numLevels"].get<int>();
-                if (ec.params.contains("featuresPerLevel")) featuresPerLevel = ec.params["featuresPerLevel"].get<int>();
-                mlpInputSize += numLevels * featuresPerLevel;
-            }
-            else if (ec.type == "sh")
-            {
-                int degree = 4;
-                if (ec.params.contains("degree")) degree = ec.params["degree"].get<int>();
-                mlpInputSize += (degree + 1) * (degree + 1);
-            }
-            else if (ec.type == "frequency")
-            {
-                int numFreqs = 6;
-                if (ec.params.contains("numFreqs")) numFreqs = ec.params["numFreqs"].get<int>();
-                mlpInputSize += ec.inputDim * numFreqs * 2;
-            }
-            else if (ec.type == "oneblob")
-            {
-                int numBins = 16;
-                if (ec.params.contains("numBins")) numBins = ec.params["numBins"].get<int>();
-                mlpInputSize += ec.inputDim * numBins;
-            }
-        }
-    }
-    else if (netCfg.useEncoding)
-    {
-        totalRawInputDim = netCfg.encoding.inputDim;
-    }
-    else
-    {
-        totalRawInputDim = mlpInputSize;
-    }
-
-    netCfg.layers.push_back({mlpInputSize, hiddenSize});
-    for (int i = 0; i < hiddenLayers; i++)
-        netCfg.layers.push_back({hiddenSize, hiddenSize});
-    netCfg.layers.push_back({hiddenSize, mlpOutputSize});
-
-    network = std::make_unique<NeuralNetwork>(device, netCfg);
+    json netJson = params.contains("network") ? params["network"] : json::object();
+    network = std::make_unique<NeuralNetwork>(device, netJson);
     network->initWeights(42);
 
-    int outDim = mlpOutputSize;
+    totalRawInputDim = network->getTotalRawInputDim();
+    int outDim = network->getOutputSize();
+
+    assert(outDim == 3 && "network_test requires outputSize == 3");
 
     inputBuffer = std::make_unique<StorageBufferResource>(
         device, (VkDeviceSize)maxBatchSize * totalRawInputDim * sizeof(float),
@@ -193,14 +86,6 @@ NetworkTestPass::NetworkTestPass(Device &_d, SwapChain &_sc, const json &params)
         device, (VkDeviceSize)pixelCount * outDim * sizeof(float),
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
-}
-
-uint64_t NetworkTestPass::getBufferDeviceAddress(VkBuffer buffer)
-{
-    VkBufferDeviceAddressInfoKHR info{};
-    info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_KHR;
-    info.buffer = buffer;
-    return vkGetBufferDeviceAddressKHR(device.getDevice(), &info);
 }
 
 void NetworkTestPass::init()
@@ -272,8 +157,8 @@ PassImageSlot NetworkTestPass::recordCommand(VkCommandBuffer cmd,
     {
         {
             DataGenPushConstants pc{};
-            pc.inputBuffer = getBufferDeviceAddress(inputBuffer->getBuffer());
-            pc.gtBuffer = getBufferDeviceAddress(gtBuffer->getBuffer());
+            pc.inputBuffer = device.getBufferDeviceAddress(inputBuffer->getBuffer());
+            pc.gtBuffer = device.getBufferDeviceAddress(gtBuffer->getBuffer());
             pc.sampleCount = (uint32_t)batchSize;
             pc.seed = frameIndex * maxBatchSize;
             pc.inputDim = (uint32_t)totalRawInputDim;
@@ -317,7 +202,7 @@ PassImageSlot NetworkTestPass::recordCommand(VkCommandBuffer cmd,
 
     {
         WriteImagePushConstants pc{};
-        pc.outputBuffer = getBufferDeviceAddress(inferenceOutputBuffer->getBuffer());
+        pc.outputBuffer = device.getBufferDeviceAddress(inferenceOutputBuffer->getBuffer());
         pc.width = extent.width;
         pc.height = extent.height;
         pc.outputSize = (uint32_t)network->getOutputSize();

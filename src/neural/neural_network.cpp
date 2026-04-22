@@ -3,54 +3,53 @@
 #include <cstring>
 #include <stdexcept>
 
-NeuralNetwork::NeuralNetwork(Device &_d, const std::vector<LayerConfig> &_layers)
-    : NeuralNetwork(_d, Config{_layers, {}, false, {}})
-{
-}
-
-NeuralNetwork::NeuralNetwork(Device &_d, const Config &cfg)
+NeuralNetwork::NeuralNetwork(Device &_d, const json &netJson)
     : device(_d)
 {
-    vkGetBufferDeviceAddressKHR = device.loadDeviceFunction<PFN_vkGetBufferDeviceAddressKHR>(
-        "vkGetBufferDeviceAddressKHR");
+    totalRawInputDim = 0;
+    totalEncodedDim = 0;
 
-    // Multi-encoding mode
-    if (!cfg.encodings.empty())
+    // Build encodings from JSON array (if present)
+    if (netJson.contains("encoding") && netJson["encoding"].is_array())
     {
-        totalRawInputDim = 0;
-        totalEncodedDim = 0;
-        for (auto &ec : cfg.encodings)
+        for (auto &enc : netJson["encoding"])
         {
+            std::string type = enc["type"].get<std::string>();
             inputFieldOffsets.push_back(totalRawInputDim);
-            auto enc = createEncoding(device, ec.type, ec.inputDim, ec.params);
-            totalRawInputDim += enc->getInputDim();
+            auto e = EncodingFactory::create(device, type, enc);
+            totalRawInputDim += e->getInputDim();
             outputFieldOffsets.push_back(totalEncodedDim);
-            totalEncodedDim += enc->getOutputDim();
-            encodings.push_back(std::move(enc));
+            totalEncodedDim += e->getOutputDim();
+            encodings.push_back(std::move(e));
         }
-
-        if (cfg.layers.front().inputSize != (int)totalEncodedDim)
-            throw std::runtime_error("NeuralNetwork: MLP inputSize (" +
-                std::to_string(cfg.layers.front().inputSize) + ") must equal totalEncodedDim (" +
-                std::to_string(totalEncodedDim) + ")");
     }
-    // Legacy single-encoding mode
-    else if (cfg.useEncoding)
+
+    // MLP config
+    int hiddenSize = 64, hiddenLayers = 2, outputSize = 3;
+    int mlpInputSize = hasEncodings() ? (int)totalEncodedDim : 0;
+    if (netJson.contains("mlp"))
     {
-        auto hg = std::make_unique<HashGridEncoding>(device, cfg.encoding);
-        totalRawInputDim = hg->getInputDim();
-        totalEncodedDim = hg->getOutputDim();
-        inputFieldOffsets.push_back(0);
-        outputFieldOffsets.push_back(0);
-        if (cfg.layers.front().inputSize != (int)totalEncodedDim)
-            throw std::runtime_error("NeuralNetwork: MLP inputSize must equal HashGrid encodedDim");
-        encodings.push_back(std::move(hg));
+        const auto &mlp = netJson["mlp"];
+        if (mlp.contains("outputSize"))   outputSize = mlp["outputSize"].get<int>();
+        if (mlp.contains("hiddenSize"))   hiddenSize = mlp["hiddenSize"].get<int>();
+        if (mlp.contains("hiddenLayers")) hiddenLayers = mlp["hiddenLayers"].get<int>();
+        if (!hasEncodings() && mlp.contains("inputSize"))
+            mlpInputSize = mlp["inputSize"].get<int>();
     }
 
-    mlp = std::make_unique<MLP>(device, cfg.layers);
+    if (!hasEncodings())
+        totalRawInputDim = mlpInputSize;
 
-    useEMA = cfg.useEMA;
-    emaAlpha = cfg.emaAlpha;
+    std::vector<LayerConfig> layers;
+    layers.push_back({mlpInputSize, hiddenSize});
+    for (int i = 0; i < hiddenLayers; i++)
+        layers.push_back({hiddenSize, hiddenSize});
+    layers.push_back({hiddenSize, outputSize});
+
+    mlp = std::make_unique<MLP>(device, layers);
+
+    if (netJson.contains("useEMA"))   useEMA   = netJson["useEMA"].get<bool>();
+    if (netJson.contains("emaAlpha")) emaAlpha = netJson["emaAlpha"].get<float>();
 
     allocateLossBuffers();
 }
@@ -63,14 +62,6 @@ NeuralNetwork::~NeuralNetwork()
         vkDestroyBuffer(device.getDevice(), lossReadbackBuffer, nullptr);
     if (lossReadbackMemory != VK_NULL_HANDLE)
         vkFreeMemory(device.getDevice(), lossReadbackMemory, nullptr);
-}
-
-uint64_t NeuralNetwork::getBufferDeviceAddress(VkBuffer buffer)
-{
-    VkBufferDeviceAddressInfoKHR info{};
-    info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_KHR;
-    info.buffer = buffer;
-    return vkGetBufferDeviceAddressKHR(device.getDevice(), &info);
 }
 
 void NeuralNetwork::allocateLossBuffers()
@@ -107,18 +98,10 @@ void NeuralNetwork::ensureIntermediateBuffers(uint32_t sampleCount)
     mlpOutputBuffer = std::make_unique<StorageBufferResource>(
         device, (VkDeviceSize)sampleCount * mlp->getOutputSize() * sizeof(float), bufUsage);
 
-    if (hasEncodings())
-    {
-        concatBuffer = std::make_unique<StorageBufferResource>(
-            device, (VkDeviceSize)sampleCount * totalEncodedDim * sizeof(float), bufUsage);
-        dInputBuffer = nullptr;
-    }
-    else
-    {
-        concatBuffer = nullptr;
-        dInputBuffer = std::make_unique<StorageBufferResource>(
-            device, (VkDeviceSize)sampleCount * mlp->getInputSize() * sizeof(float), bufUsage);
-    }
+    // With encodings: holds concatenated encoded features (MLP forward input, MLP dInput).
+    // Without encodings: holds MLP dInput only. In both cases size = sampleCount * mlpInputSize.
+    concatBuffer = std::make_unique<StorageBufferResource>(
+        device, (VkDeviceSize)sampleCount * mlp->getInputSize() * sizeof(float), bufUsage);
 }
 
 void NeuralNetwork::initWeights(unsigned int seed)
@@ -181,7 +164,7 @@ void NeuralNetwork::allocateEMABuffers()
     // Shadow MLP param buffer (params region only, no gradients)
     VkDeviceSize mlpParamSize = mlp->getGradientOffset();
     inferMlpParamBuffer = std::make_unique<StorageBufferResource>(device, mlpParamSize, bufUsage);
-    uint64_t inferMlpAddr = getBufferDeviceAddress(inferMlpParamBuffer->getBuffer());
+    uint64_t inferMlpAddr = device.getBufferDeviceAddress(inferMlpParamBuffer->getBuffer());
 
     // Build infer layer address buffer: same structure as MLP's but pointing to shadow buffer
     auto &layers = mlp->getLayers();
@@ -233,7 +216,7 @@ void NeuralNetwork::allocateEMABuffers()
         {
             VkDeviceSize encSize = encodings[i]->getParamBufferSize();
             inferEncParamBuffers[i] = std::make_unique<StorageBufferResource>(device, encSize, bufUsage);
-            inferEncParamAddrs[i] = getBufferDeviceAddress(inferEncParamBuffers[i]->getBuffer());
+            inferEncParamAddrs[i] = device.getBufferDeviceAddress(inferEncParamBuffers[i]->getBuffer());
         }
     }
 
@@ -248,7 +231,7 @@ void NeuralNetwork::allocateEMABuffers()
         {
             VkBufferCopy encRegion{};
             encRegion.size = encodings[i]->getParamBufferSize();
-            vkCmdCopyBuffer(cmd, dynamic_cast<HashGridEncoding*>(encodings[i].get())->getTableBuffer(),
+            vkCmdCopyBuffer(cmd, encodings[i]->getParamBuffer(),
                             inferEncParamBuffers[i]->getBuffer(), 1, &encRegion);
         }
     }
@@ -269,7 +252,7 @@ void NeuralNetwork::recordEMAUpdate(VkCommandBuffer cmd)
     {
         uint32_t paramFloats = (uint32_t)(mlp->getGradientOffset() / sizeof(float));
         EmaPushConstants pc{};
-        pc.inferParams = getBufferDeviceAddress(inferMlpParamBuffer->getBuffer());
+        pc.inferParams = device.getBufferDeviceAddress(inferMlpParamBuffer->getBuffer());
         pc.trainParams = mlp->getParamBufferAddress();
         pc.count = paramFloats;
         pc.alpha = emaAlpha;
@@ -394,10 +377,9 @@ void NeuralNetwork::recordTrain(VkCommandBuffer cmd, VkBuffer inputBuffer,
                          VK_PIPELINE_STAGE_2_TRANSFER_BIT,
                          VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 
-    // 3. MLP backward
-    VkBuffer dInputBuf = hasEncodings() ? concatBuffer->getBuffer() : dInputBuffer->getBuffer();
+    // 3. MLP backward (dInput lands in concatBuffer; reused by encoding backward when present)
     mlp->recordBackward(cmd, activationsBuffer->getBuffer(),
-                        mlpOutputBuffer->getBuffer(), gtBuffer, dInputBuf,
+                        mlpOutputBuffer->getBuffer(), gtBuffer, concatBuffer->getBuffer(),
                         lossGpuBuffer->getBuffer(), sampleCount);
     computeBarrier(cmd);
 

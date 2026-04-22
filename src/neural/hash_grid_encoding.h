@@ -7,25 +7,17 @@
 
 class HashGridEncoding : public Encoding
 {
-public:
-    struct Config
-    {
-        int numLevels{16};
-        int featuresPerLevel{2};
-        int tableSize{1 << 19};
-        int coarsestResolution{16};
-        int finestResolution{2048};
-        int inputDim{2};
-    };
+    REGISTER_ENCODING(HashGridEncoding);
 
-    HashGridEncoding(Device &device, const Config &cfg);
+public:
+    HashGridEncoding(Device &device, const json &params);
     ~HashGridEncoding() = default;
 
     HashGridEncoding(const HashGridEncoding &) = delete;
     HashGridEncoding &operator=(const HashGridEncoding &) = delete;
 
-    int getInputDim() const override { return config.inputDim; }
-    int getOutputDim() const override { return config.numLevels * config.featuresPerLevel; }
+    int getInputDim() const override { return inputDim; }
+    int getOutputDim() const override { return numLevels * featuresPerLevel; }
     bool hasTrainableParams() const override { return true; }
     int getTrainableParamCount() const override { return getTotalFeatures(); }
     std::string typeName() const override { return "hashgrid"; }
@@ -47,16 +39,9 @@ public:
     void recordZeroGrads(VkCommandBuffer cmd) override;
     void recordAdam(VkCommandBuffer cmd) override;
 
-    const Config &getConfig() const { return config; }
-    int getEncodedDim() const { return config.numLevels * config.featuresPerLevel; }
-    int getTotalFeatures() const { return config.numLevels * config.tableSize * config.featuresPerLevel; }
-    float getPerLevelScale() const { return perLevelScale; }
-
-    VkBuffer getTableBuffer() const { return tableBuffer->getBuffer(); }
-    VkBuffer getTableGradBuffer() const { return tableGradBuffer->getBuffer(); }
-
     uint64_t getParamBufferAddress() const override { return tableAddr; }
     VkDeviceSize getParamBufferSize() const override { return tableBufferSize; }
+    VkBuffer getParamBuffer() const override { return tableBuffer->getBuffer(); }
 
     void recordForwardWithParams(VkCommandBuffer cmd,
                                  uint64_t paramAddr,
@@ -66,8 +51,17 @@ public:
 
 private:
     Device &device;
-    Config config;
+
+    int numLevels{16};
+    int featuresPerLevel{2};
+    int tableSize{1 << 19};
+    int coarsestResolution{16};
+    int finestResolution{2048};
+    int inputDim{2};
+
     float perLevelScale{1.0f};
+
+    int getTotalFeatures() const { return numLevels * tableSize * featuresPerLevel; }
 
     std::unique_ptr<StorageBufferResource> tableBuffer;
     std::unique_ptr<StorageBufferResource> tableGradBuffer;
@@ -80,7 +74,4 @@ private:
     std::unique_ptr<ComputePipeline> forwardPipeline;
     std::unique_ptr<ComputePipeline> backwardPipeline;
     std::unique_ptr<ComputePipeline> adamPipeline;
-
-    PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR{nullptr};
-    uint64_t getBufferDeviceAddress(VkBuffer buffer);
 };

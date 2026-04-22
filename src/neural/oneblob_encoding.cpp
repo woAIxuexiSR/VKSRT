@@ -3,6 +3,8 @@
 #include <stdexcept>
 #include <cmath>
 
+REGISTER_ENCODING_CPP(OneBlobEncoding, "oneblob");
+
 struct OneBlobForwardPushConstants
 {
     uint64_t inputBuffer;
@@ -17,27 +19,20 @@ struct OneBlobForwardPushConstants
     uint32_t outputStride;
 };
 
-OneBlobEncoding::OneBlobEncoding(Device &_d, const Config &cfg)
-    : device(_d), config(cfg)
+OneBlobEncoding::OneBlobEncoding(Device &_d, const json &params)
+    : device(_d)
 {
-    if (cfg.inputDim < 1 || cfg.inputDim > 4)
+    if (params.contains("inputDim")) inputDim = params["inputDim"].get<int>();
+    if (params.contains("numBins"))  numBins  = params["numBins"].get<int>();
+    if (params.contains("sigma"))    sigma    = params["sigma"].get<float>();
+
+    if (inputDim < 1 || inputDim > 4)
         throw std::runtime_error("OneBlobEncoding: inputDim must be in [1, 4]");
-    if (cfg.numBins < 2 || cfg.numBins > 32)
+    if (numBins < 2 || numBins > 32)
         throw std::runtime_error("OneBlobEncoding: numBins must be in [2, 32]");
 
-    if (config.sigma <= 0.0f)
-        config.sigma = 1.0f / (float)(config.numBins - 1);
-
-    vkGetBufferDeviceAddressKHR = device.loadDeviceFunction<PFN_vkGetBufferDeviceAddressKHR>(
-        "vkGetBufferDeviceAddressKHR");
-}
-
-uint64_t OneBlobEncoding::getBufferDeviceAddress(VkBuffer buffer)
-{
-    VkBufferDeviceAddressInfoKHR info{};
-    info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_KHR;
-    info.buffer = buffer;
-    return vkGetBufferDeviceAddressKHR(device.getDevice(), &info);
+    if (sigma <= 0.0f)
+        sigma = 1.0f / (float)(numBins - 1);
 }
 
 void OneBlobEncoding::createPipelines()
@@ -55,12 +50,12 @@ void OneBlobEncoding::recordForward(VkCommandBuffer cmd,
                                     uint32_t sampleCount)
 {
     OneBlobForwardPushConstants pc{};
-    pc.inputBuffer = getBufferDeviceAddress(rawInput);
-    pc.outputBuffer = getBufferDeviceAddress(encodedOutput);
+    pc.inputBuffer = device.getBufferDeviceAddress(rawInput);
+    pc.outputBuffer = device.getBufferDeviceAddress(encodedOutput);
     pc.sampleCount = sampleCount;
-    pc.inputDim = (uint32_t)config.inputDim;
-    pc.numBins = (uint32_t)config.numBins;
-    pc.sigma = config.sigma;
+    pc.inputDim = (uint32_t)inputDim;
+    pc.numBins = (uint32_t)numBins;
+    pc.sigma = sigma;
     pc.inputFieldOffset = inputOffset;
     pc.inputStride = inputStride;
     pc.outputFieldOffset = outputOffset;

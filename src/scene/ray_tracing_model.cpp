@@ -7,20 +7,11 @@
 
 void RayTracingModel::loadFunctions()
 {
-    vkGetBufferDeviceAddressKHR = device.loadDeviceFunction<PFN_vkGetBufferDeviceAddressKHR>("vkGetBufferDeviceAddressKHR");
     vkCreateAccelerationStructureKHR = device.loadDeviceFunction<PFN_vkCreateAccelerationStructureKHR>("vkCreateAccelerationStructureKHR");
     vkCmdBuildAccelerationStructuresKHR = device.loadDeviceFunction<PFN_vkCmdBuildAccelerationStructuresKHR>("vkCmdBuildAccelerationStructuresKHR");
     vkGetAccelerationStructureDeviceAddressKHR = device.loadDeviceFunction<PFN_vkGetAccelerationStructureDeviceAddressKHR>("vkGetAccelerationStructureDeviceAddressKHR");
     vkGetAccelerationStructureBuildSizesKHR = device.loadDeviceFunction<PFN_vkGetAccelerationStructureBuildSizesKHR>("vkGetAccelerationStructureBuildSizesKHR");
     vkDestroyAccelerationStructureKHR = device.loadDeviceFunction<PFN_vkDestroyAccelerationStructureKHR>("vkDestroyAccelerationStructureKHR");
-}
-
-uint64_t RayTracingModel::getBufferDeviceAddress(VkBuffer buffer)
-{
-    VkBufferDeviceAddressInfoKHR info{};
-    info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_KHR;
-    info.buffer = buffer;
-    return vkGetBufferDeviceAddressKHR(device.getDevice(), &info);
 }
 
 uint32_t RayTracingModel::alignedSize(uint32_t value, uint32_t alignment)
@@ -157,8 +148,8 @@ void RayTracingModel::createBLAS()
 
     std::vector<uint32_t> primitiveCounts(meshCount);
     VkDeviceSize maxScratchSize = 0;
-    uint64_t vertexAddress = getBufferDeviceAddress(vertexBuffer->getBuffer());
-    uint64_t indexAddress = getBufferDeviceAddress(indexBuffer->getBuffer());
+    uint64_t vertexAddress = device.getBufferDeviceAddress(vertexBuffer->getBuffer());
+    uint64_t indexAddress = device.getBufferDeviceAddress(indexBuffer->getBuffer());
 
     for (size_t i = 0; i < meshCount; i++)
     {
@@ -175,7 +166,7 @@ void RayTracingModel::createBLAS()
         geometry.geometry.triangles.vertexStride = sizeof(float) * 3;
         geometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
         geometry.geometry.triangles.indexData.deviceAddress = indexAddress + hitSBTRecords[i].indexOffset * sizeof(glm::uvec3);
-        geometry.geometry.triangles.transformData.deviceAddress = getBufferDeviceAddress(blasTransformBuffer->getBuffer());
+        geometry.geometry.triangles.transformData.deviceAddress = device.getBufferDeviceAddress(blasTransformBuffer->getBuffer());
 
         VkAccelerationStructureBuildGeometryInfoKHR buildGeometrySizeInfo{};
         buildGeometrySizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
@@ -224,7 +215,7 @@ void RayTracingModel::createBLAS()
     VkDeviceSize alignedScratch = (VkDeviceSize)alignedSize((uint32_t)maxScratchSize, (uint32_t)scratchAlignment);
     StorageBufferResource scratchBuffer{device, alignedScratch * meshCount,
                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT};
-    VkDeviceAddress scratchAddress = getBufferDeviceAddress(scratchBuffer.getBuffer());
+    VkDeviceAddress scratchAddress = device.getBufferDeviceAddress(scratchBuffer.getBuffer());
 
     for (size_t i = 0; i < meshCount; i++)
         buildInfos[i].scratchData.deviceAddress = scratchAddress + i * alignedScratch;
@@ -277,7 +268,7 @@ void RayTracingModel::createTLAS()
     geometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
     geometry.geometry.instances.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
     geometry.geometry.instances.arrayOfPointers = VK_FALSE;
-    geometry.geometry.instances.data.deviceAddress = getBufferDeviceAddress(instanceBuffer->getBuffer());
+    geometry.geometry.instances.data.deviceAddress = device.getBufferDeviceAddress(instanceBuffer->getBuffer());
 
     VkAccelerationStructureBuildGeometryInfoKHR sizeInfo{};
     sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
@@ -317,7 +308,7 @@ void RayTracingModel::createTLAS()
     buildInfo.dstAccelerationStructure = tlas;
     buildInfo.geometryCount = 1;
     buildInfo.pGeometries = &geometry;
-    buildInfo.scratchData.deviceAddress = getBufferDeviceAddress(scratchBuffer.getBuffer());
+    buildInfo.scratchData.deviceAddress = device.getBufferDeviceAddress(scratchBuffer.getBuffer());
 
     VkAccelerationStructureBuildRangeInfoKHR rangeInfo{};
     rangeInfo.primitiveCount = primitiveCount;

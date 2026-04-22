@@ -672,3 +672,11 @@ void Device::endSingleTimeCommands(VkCommandBuffer commandBuffer)
 
     vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }
+
+uint64_t Device::getBufferDeviceAddress(VkBuffer buffer) const
+{
+    VkBufferDeviceAddressInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+    info.buffer = buffer;
+    return vkGetBufferDeviceAddress(device, &info);
+}

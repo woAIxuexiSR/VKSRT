@@ -4,18 +4,14 @@
 
 class SHEncoding : public Encoding
 {
-public:
-    struct Config
-    {
-        int inputDim{3};
-        int degree{4};
-    };
+    REGISTER_ENCODING(SHEncoding);
 
-    SHEncoding(Device &device, const Config &cfg);
+public:
+    SHEncoding(Device &device, const json &params);
     ~SHEncoding() = default;
 
     int getInputDim() const override { return 3; }
-    int getOutputDim() const override { return (config.degree + 1) * (config.degree + 1); }
+    int getOutputDim() const override { return (degree + 1) * (degree + 1); }
     bool hasTrainableParams() const override { return false; }
     std::string typeName() const override { return "sh"; }
 
@@ -33,9 +29,6 @@ public:
 
 private:
     Device &device;
-    Config config;
+    int degree{4};
     std::unique_ptr<ComputePipeline> forwardPipeline;
-
-    PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR{nullptr};
-    uint64_t getBufferDeviceAddress(VkBuffer buffer);
 };

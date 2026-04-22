@@ -4,18 +4,14 @@
 
 class FrequencyEncoding : public Encoding
 {
-public:
-    struct Config
-    {
-        int inputDim{3};
-        int numFreqs{6};
-    };
+    REGISTER_ENCODING(FrequencyEncoding);
 
-    FrequencyEncoding(Device &device, const Config &cfg);
+public:
+    FrequencyEncoding(Device &device, const json &params);
     ~FrequencyEncoding() = default;
 
-    int getInputDim() const override { return config.inputDim; }
-    int getOutputDim() const override { return config.inputDim * config.numFreqs * 2; }
+    int getInputDim() const override { return inputDim; }
+    int getOutputDim() const override { return inputDim * numFreqs * 2; }
     bool hasTrainableParams() const override { return false; }
     std::string typeName() const override { return "frequency"; }
 
@@ -33,9 +29,7 @@ public:
 
 private:
     Device &device;
-    Config config;
+    int inputDim{3};
+    int numFreqs{6};
     std::unique_ptr<ComputePipeline> forwardPipeline;
-
-    PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR{nullptr};
-    uint64_t getBufferDeviceAddress(VkBuffer buffer);
 };
