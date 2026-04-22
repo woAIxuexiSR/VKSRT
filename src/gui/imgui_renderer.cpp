@@ -3,17 +3,7 @@
 void ImGUIRenderer::createDescriptorPool()
 {
     VkDescriptorPoolSize poolSize[] = {
-        {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
-        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
-        {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 16},
     };
 
     VkDescriptorPoolCreateInfo poolInfo = {};
@@ -21,7 +11,7 @@ void ImGUIRenderer::createDescriptorPool()
     poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     poolInfo.poolSizeCount = static_cast<uint32_t>(IM_ARRAYSIZE(poolSize));
     poolInfo.pPoolSizes = poolSize;
-    poolInfo.maxSets = 1000 * IM_ARRAYSIZE(poolSize);
+    poolInfo.maxSets = 16;
 
     if (vkCreateDescriptorPool(device.getDevice(), &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
         throw std::runtime_error("failed to create descriptor pool");
@@ -49,7 +39,7 @@ void ImGUIRenderer::initImGUI(SwapChain &swapChain)
     renderingInfo.viewMask = 0;
     renderingInfo.colorAttachmentCount = 1;
     renderingInfo.pColorAttachmentFormats = &colorFormat;
-    renderingInfo.depthAttachmentFormat = swapChain.getDepthFormat();
+    renderingInfo.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
     renderingInfo.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
 
     ImGui_ImplVulkan_InitInfo initInfo{};
@@ -112,6 +102,7 @@ VkCommandBuffer ImGUIRenderer::prepareCommandBuffer(SwapChain &swapChain, int cu
     if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
         throw std::runtime_error("failed to begin recording command buffer!");
 
+    // Input layout assumes BlitPass left the swapchain image in COLOR_ATTACHMENT_OPTIMAL.
     device.imageBarrier(commandBuffer, swapChain.getImage(imageIndex), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                         VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT,
                         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 1);
@@ -124,15 +115,6 @@ VkCommandBuffer ImGUIRenderer::prepareCommandBuffer(SwapChain &swapChain, int cu
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     colorAttachment.clearValue.color = {{0.1f, 0.1f, 0.1f, 1.0f}};
 
-    VkRenderingAttachmentInfo depthAttachment{};
-    depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    depthAttachment.imageView = swapChain.getDepthImageView();
-    depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.clearValue.depthStencil.depth = 1.0f;
-    depthAttachment.clearValue.depthStencil.stencil = 0;
-
     VkRenderingInfo renderingInfo{};
     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
     renderingInfo.renderArea.offset = {0, 0};
@@ -140,7 +122,7 @@ VkCommandBuffer ImGUIRenderer::prepareCommandBuffer(SwapChain &swapChain, int cu
     renderingInfo.layerCount = 1;
     renderingInfo.colorAttachmentCount = 1;
     renderingInfo.pColorAttachments = &colorAttachment;
-    renderingInfo.pDepthAttachment = &depthAttachment;
+    renderingInfo.pDepthAttachment = nullptr;
     renderingInfo.pStencilAttachment = nullptr;
 
     vkCmdBeginRendering(commandBuffer, &renderingInfo);

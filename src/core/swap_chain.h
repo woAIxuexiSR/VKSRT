@@ -15,7 +15,7 @@ private:
     VkExtent2D windowExtent;
 
     VkSwapchainKHR swapChain;
-    VkSwapchainKHR oldSwapChain;
+    VkSwapchainKHR oldSwapChain; // non-null only briefly during recreate(); passed as oldSwapchain to createSwapChain()
 
     VkFormat swapChainImageFormat;
     VkExtent2D swapChainExtent;
