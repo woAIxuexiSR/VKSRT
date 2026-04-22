@@ -12,8 +12,6 @@ class BlitPass : public PassBase
 
 private:
     std::unique_ptr<GraphicsPipeline> blitPipeline;
-    VkImageView lastBoundInputView{VK_NULL_HANDLE};
-    VkSampler lastBoundInputSampler{VK_NULL_HANDLE};
 
     // Offline mode: render to this image instead of swapchain
     std::unique_ptr<ImageResource> offlineImage;

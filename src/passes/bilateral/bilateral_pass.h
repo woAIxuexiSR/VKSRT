@@ -22,8 +22,6 @@ private:
     std::unique_ptr<ComputePipeline> filterPipeline;
     ImageResource outputImage;
     BilateralPushConstants pushConstants;
-    VkImageView lastBoundInputView{VK_NULL_HANDLE};
-    VkSampler lastBoundInputSampler{VK_NULL_HANDLE};
 
     GBuffer *gbuffer{nullptr};
 

@@ -33,11 +33,15 @@ private:
     TAAPushConstants pushConstants;
     TAAUniform taaUniform;
     UniformBufferResource uniformBuffer;
-    bool firstFrame{true};
-    bool wasInteracting{false};
-    bool wasEnabled{false};
-    VkImageView lastBoundInputView{VK_NULL_HANDLE};
-    VkSampler lastBoundInputSampler{VK_NULL_HANDLE};
+
+    // Disabled:   pass is skipped; history is not read/written. Re-enabling transitions to Fresh.
+    // Fresh:      next record will use UNDEFINED as history's old layout (don't care / stale contents).
+    //             Also implies frameIndex == 0 so the shader skips reading history.
+    // TAA:        camera moving — reproject + clamp against history.
+    // Accumulate: camera static — progressive running-average for convergence.
+    enum class State { Disabled, Fresh, TAA, Accumulate };
+    State state{State::Fresh};       // what the last successfully-recorded frame was
+    State pendingMode{State::Fresh}; // mode chosen in update(), consumed by recordCommand()
 
     Camera *camera{nullptr};
     GBuffer *gbuffer{nullptr};

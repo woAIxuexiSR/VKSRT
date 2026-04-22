@@ -19,7 +19,18 @@ class Camera;            // forward declare
 class GBuffer;           // forward declare
 class RayTracingModel;   // forward declare
 
-// Image slot for inter-pass communication
+// Image slot for inter-pass communication.
+//
+// Output-image barrier convention:
+//   - Pure-write output (compute/fragment overwrites every texel, no frame-to-frame
+//     dependency): use VK_IMAGE_LAYOUT_UNDEFINED as the old layout. srcAccess=0,
+//     srcStage=TOP_OF_PIPE. Contents of the previous frame are discarded.
+//     Examples: tonemap, bilateral, network_test LDR output.
+//   - History-dependent output (the pass itself reads the previous frame's write,
+//     e.g. accumulation, history buffers): track a Fresh/firstFrame flag so the
+//     first use picks UNDEFINED and subsequent uses transition from the prior layout.
+//     Examples: path_tracing (post-downstream SHADER_READ_ONLY -> GENERAL),
+//     TAA historyImage, wavefront_pt color output.
 struct PassImageSlot
 {
     VkImage image{VK_NULL_HANDLE};
@@ -39,6 +50,28 @@ protected:
     bool enabled = true;
 
     PassImageSlot initInputSlot;
+
+    // Descriptor-set rebind tracking: many passes bind inputSlot.{imageView,sampler}
+    // into slot 0 of their pipeline. When the upstream pass toggles enable, the
+    // slot identity can change mid-run. Helpers below detect that and pair with
+    // a targeted updateDescriptorSets() rewrite in the pass.
+    VkImageView lastBoundInputView{VK_NULL_HANDLE};
+    VkSampler lastBoundInputSampler{VK_NULL_HANDLE};
+
+    bool inputSlotChanged(const PassImageSlot &slot)
+    {
+        bool changed = slot.imageView != lastBoundInputView ||
+                       slot.sampler != lastBoundInputSampler;
+        if (changed)
+            markInputSlotBound(slot);
+        return changed;
+    }
+
+    void markInputSlotBound(const PassImageSlot &slot)
+    {
+        lastBoundInputView = slot.imageView;
+        lastBoundInputSampler = slot.sampler;
+    }
 
 public:
     PassBase(Device &_d, SwapChain &_sc) : device(_d), swapChain(_sc) {}

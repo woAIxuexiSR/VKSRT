@@ -28,8 +28,7 @@ void TonemapPass::init()
         {VkDescriptorImageInfo{initInputSlot.sampler, initInputSlot.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}},
         {VkDescriptorImageInfo{ldrImage.getSampler(), ldrImage.getImageView(), VK_IMAGE_LAYOUT_GENERAL}},
     });
-    lastBoundInputView = initInputSlot.imageView;
-    lastBoundInputSampler = initInputSlot.sampler;
+    markInputSlotBound(initInputSlot);
 }
 
 void TonemapPass::drawUI()
@@ -44,15 +43,13 @@ PassImageSlot TonemapPass::recordCommand(VkCommandBuffer commandBuffer,
     if (!enabled)
         return inputSlot;
 
-    if (inputSlot.imageView != lastBoundInputView || inputSlot.sampler != lastBoundInputSampler)
+    if (inputSlotChanged(inputSlot))
     {
         vkDeviceWaitIdle(device.getDevice());
         tonemapPipeline->updateDescriptorSets({
             {VkDescriptorImageInfo{inputSlot.sampler, inputSlot.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}},
             {VkDescriptorImageInfo{ldrImage.getSampler(), ldrImage.getImageView(), VK_IMAGE_LAYOUT_GENERAL}},
         });
-        lastBoundInputView = inputSlot.imageView;
-        lastBoundInputSampler = inputSlot.sampler;
     }
 
     auto extent = ldrImage.getExtent();

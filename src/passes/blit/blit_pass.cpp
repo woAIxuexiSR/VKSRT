@@ -35,8 +35,7 @@ void BlitPass::init()
     blitPipeline->updateDescriptorSets({
         {VkDescriptorImageInfo{initInputSlot.sampler, initInputSlot.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}},
     });
-    lastBoundInputView = initInputSlot.imageView;
-    lastBoundInputSampler = initInputSlot.sampler;
+    markInputSlotBound(initInputSlot);
 }
 
 void BlitPass::drawUI()
@@ -65,14 +64,12 @@ PassImageSlot BlitPass::recordCommand(VkCommandBuffer commandBuffer,
                                        const PassImageSlot &inputSlot,
                                        uint32_t currentFrame, uint32_t imageIndex)
 {
-    if (inputSlot.imageView != lastBoundInputView || inputSlot.sampler != lastBoundInputSampler)
+    if (inputSlotChanged(inputSlot))
     {
         vkDeviceWaitIdle(device.getDevice());
         blitPipeline->updateDescriptorSets({
             {VkDescriptorImageInfo{inputSlot.sampler, inputSlot.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}},
         });
-        lastBoundInputView = inputSlot.imageView;
-        lastBoundInputSampler = inputSlot.sampler;
     }
 
     // Transition input -> SHADER_READ_ONLY for fragment read

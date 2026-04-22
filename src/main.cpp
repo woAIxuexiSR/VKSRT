@@ -158,6 +158,7 @@ private:
             json params = passConfig.value("params", json::object());
 
             auto pass = RenderPassFactory::createPass(type, device, *swapChain, params);
+            pass->setEnabled(passConfig.value("enabled", true));
             passes.push_back(pass);
         }
 

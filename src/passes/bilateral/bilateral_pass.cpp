@@ -40,8 +40,7 @@ void BilateralPass::init()
         {VkDescriptorImageInfo{gbuffer->getNormalSampler(), gbuffer->getNormalImageView(), VK_IMAGE_LAYOUT_GENERAL}},
         {VkDescriptorImageInfo{gbuffer->getPositionSampler(), gbuffer->getPositionImageView(), VK_IMAGE_LAYOUT_GENERAL}},
     });
-    lastBoundInputView = initInputSlot.imageView;
-    lastBoundInputSampler = initInputSlot.sampler;
+    markInputSlotBound(initInputSlot);
 }
 
 void BilateralPass::drawUI()
@@ -59,7 +58,7 @@ PassImageSlot BilateralPass::recordCommand(VkCommandBuffer commandBuffer,
     if (!enabled || !gbuffer || !gbuffer->isWritten())
         return inputSlot;
 
-    if (inputSlot.imageView != lastBoundInputView || inputSlot.sampler != lastBoundInputSampler)
+    if (inputSlotChanged(inputSlot))
     {
         vkDeviceWaitIdle(device.getDevice());
         filterPipeline->updateDescriptorSets({
@@ -68,8 +67,6 @@ PassImageSlot BilateralPass::recordCommand(VkCommandBuffer commandBuffer,
             {VkDescriptorImageInfo{gbuffer->getNormalSampler(), gbuffer->getNormalImageView(), VK_IMAGE_LAYOUT_GENERAL}},
             {VkDescriptorImageInfo{gbuffer->getPositionSampler(), gbuffer->getPositionImageView(), VK_IMAGE_LAYOUT_GENERAL}},
         });
-        lastBoundInputView = inputSlot.imageView;
-        lastBoundInputSampler = inputSlot.sampler;
     }
 
     auto extent = outputImage.getExtent();

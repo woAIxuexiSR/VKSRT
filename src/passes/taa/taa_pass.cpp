@@ -39,8 +39,7 @@ void TAAPass::init()
         {VkDescriptorImageInfo{gbuffer->getPositionSampler(), gbuffer->getPositionImageView(), VK_IMAGE_LAYOUT_GENERAL}},
         {VkDescriptorBufferInfo{uniformBuffer.getBuffer(), 0, sizeof(TAAUniform)}},
     });
-    lastBoundInputView = initInputSlot.imageView;
-    lastBoundInputSampler = initInputSlot.sampler;
+    markInputSlotBound(initInputSlot);
 }
 
 void TAAPass::drawUI()
@@ -54,41 +53,28 @@ void TAAPass::update(uint32_t currentFrame, InputState &inputState)
 {
     if (!enabled)
     {
-        wasEnabled = false;
+        state = State::Disabled;
+        pushConstants.frameIndex = 0;
         return;
     }
 
-    // Reset state when re-enabled after being disabled
-    if (!wasEnabled)
-    {
-        firstFrame = true;
-        pushConstants.frameIndex = 0;
-    }
+    // Re-enable from Disabled: history contents are stale, treat as Fresh.
+    if (state == State::Disabled)
+        state = State::Fresh;
 
     bool isInteracting = inputState.isChanged();
     bool gbufferAvailable = gbuffer && gbuffer->isWritten();
+    pendingMode = (isInteracting && gbufferAvailable) ? State::TAA : State::Accumulate;
 
-    if (isInteracting && gbufferAvailable)
-    {
-        // Interacting: TAA mode (reprojection + clamping, requires gbuffer)
-        pushConstants.useAccumMode = 0;
-        if (!wasInteracting)
-            pushConstants.frameIndex = 0; // just started interacting, reset
-        else
-            pushConstants.frameIndex++;
-    }
+    // Reset accumulation on Fresh (first frame after init/re-enable) or on
+    // TAA <-> Accumulate transition. Fresh compares unequal to TAA/Accumulate,
+    // so the single inequality check covers both cases.
+    if (state != pendingMode)
+        pushConstants.frameIndex = 0;
     else
-    {
-        // Static: accumulate mode (running average for convergence)
-        if (wasInteracting)
-            pushConstants.frameIndex = 0; // just stopped interacting, reset
-        else
-            pushConstants.frameIndex++;
-        pushConstants.useAccumMode = 1;
-    }
+        pushConstants.frameIndex++;
 
-    wasInteracting = isInteracting;
-    wasEnabled = true;
+    pushConstants.useAccumMode = (pendingMode == State::Accumulate) ? 1 : 0;
 
     // Update uniform buffer
     taaUniform.prevViewProj = camera->getPrevViewProjectionMatrix();
@@ -96,6 +82,8 @@ void TAAPass::update(uint32_t currentFrame, InputState &inputState)
     taaUniform.screenWidth = extent.width;
     taaUniform.screenHeight = extent.height;
     uniformBuffer.update(&taaUniform);
+
+    // state is advanced to pendingMode by recordCommand after it consumes Fresh.
 }
 
 PassImageSlot TAAPass::recordCommand(VkCommandBuffer commandBuffer,
@@ -106,7 +94,7 @@ PassImageSlot TAAPass::recordCommand(VkCommandBuffer commandBuffer,
         return inputSlot;
 
     // Dynamic rebind if upstream pass changed
-    if (inputSlot.imageView != lastBoundInputView || inputSlot.sampler != lastBoundInputSampler)
+    if (inputSlotChanged(inputSlot))
     {
         vkDeviceWaitIdle(device.getDevice());
         taaPipeline->updateDescriptorSets({
@@ -116,8 +104,6 @@ PassImageSlot TAAPass::recordCommand(VkCommandBuffer commandBuffer,
             {VkDescriptorImageInfo{gbuffer->getPositionSampler(), gbuffer->getPositionImageView(), VK_IMAGE_LAYOUT_GENERAL}},
             {VkDescriptorBufferInfo{uniformBuffer.getBuffer(), 0, sizeof(TAAUniform)}},
         });
-        lastBoundInputView = inputSlot.imageView;
-        lastBoundInputSampler = inputSlot.sampler;
     }
 
     auto extent = outputImage.getExtent();
@@ -128,10 +114,12 @@ PassImageSlot TAAPass::recordCommand(VkCommandBuffer commandBuffer,
                         VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT,
                         VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, 1);
 
-    // 2. Transition history buffer for reading
-    VkImageLayout histOldLayout = firstFrame ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    VkAccessFlags2 histSrcAccess = firstFrame ? (VkAccessFlags2)0 : VK_ACCESS_2_TRANSFER_WRITE_BIT;
-    VkPipelineStageFlags2 histSrcStage = firstFrame ? VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT : VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+    // 2. Transition history buffer for reading.
+    // Fresh: historyImage has never been written, use UNDEFINED to discard stale contents.
+    bool isFresh = (state == State::Fresh);
+    VkImageLayout histOldLayout = isFresh ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    VkAccessFlags2 histSrcAccess = isFresh ? (VkAccessFlags2)0 : VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    VkPipelineStageFlags2 histSrcStage = isFresh ? VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT : VK_PIPELINE_STAGE_2_TRANSFER_BIT;
 
     device.imageBarrier(commandBuffer, historyImage.getImage(),
                         histOldLayout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -141,7 +129,7 @@ PassImageSlot TAAPass::recordCommand(VkCommandBuffer commandBuffer,
     // 3. G-buffer position: ensure GENERAL layout for descriptor binding
     if (gbuffer)
     {
-        VkImageLayout gbufOldLayout = firstFrame ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_GENERAL;
+        VkImageLayout gbufOldLayout = isFresh ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_GENERAL;
         device.imageBarrier(commandBuffer, gbuffer->getPositionImage(),
                             gbufOldLayout, VK_IMAGE_LAYOUT_GENERAL,
                             VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT,
@@ -191,7 +179,7 @@ PassImageSlot TAAPass::recordCommand(VkCommandBuffer commandBuffer,
                         VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_SHADER_READ_BIT,
                         VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, 1);
 
-    firstFrame = false;
+    state = pendingMode;
     return getOutputSlot();
 }
 

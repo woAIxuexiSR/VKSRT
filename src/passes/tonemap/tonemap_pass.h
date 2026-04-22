@@ -19,8 +19,6 @@ private:
     std::unique_ptr<ComputePipeline> tonemapPipeline;
     ImageResource ldrImage;
     TonemapPushConstants pushConstants;
-    VkImageView lastBoundInputView{VK_NULL_HANDLE};
-    VkSampler lastBoundInputSampler{VK_NULL_HANDLE};
 
 public:
     TonemapPass(Device &_d, SwapChain &_sc, const json &params);
