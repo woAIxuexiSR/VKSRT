@@ -9,12 +9,8 @@ RayTracingPass::RayTracingPass(Device &_d, SwapChain &_sc, const json &params)
     : PassBase(_d, _sc),
       colorImage{_d, VK_FORMAT_R32G32B32A32_SFLOAT, _sc.getExtent(),
                  VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT},
-      uniformBuffer{_d, sizeof(RTUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT},
-      model{_d}
+      uniformBuffer{_d, sizeof(RTUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT}
 {
-    SceneLoader::loadScene(params, model);
-
-    model.buildAccelerationStructures();
 }
 
 void RayTracingPass::init()
@@ -24,13 +20,13 @@ void RayTracingPass::init()
         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR},
     };
     VkShaderStageFlags hitStages = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
-    auto modelBindings = model.getDescriptorBindings(hitStages);
+    auto modelBindings = scene->getDescriptorBindings(hitStages);
     bindings.insert(bindings.end(), modelBindings.begin(), modelBindings.end());
 
     rtPipeline = std::make_unique<RayTracingPipeline>(
         device, 1, bindings,
         shaderPath("ray_tracing/ray_tracing.spv"),
-        model.getHitSBTRecords(),
+        scene->getHitSBTRecords(),
         "raygenMain", "missMain", "closestHitMain",
         sizeof(RTPushConstants));
 
@@ -38,7 +34,7 @@ void RayTracingPass::init()
         {VkDescriptorImageInfo{colorImage.getSampler(), colorImage.getImageView(), VK_IMAGE_LAYOUT_GENERAL}},
         {VkDescriptorBufferInfo{uniformBuffer.getBuffer(), 0, sizeof(RTUniform)}},
     };
-    auto modelInfos = model.getDescriptorInfos();
+    auto modelInfos = scene->getDescriptorInfos();
     infos.insert(infos.end(), modelInfos.begin(), modelInfos.end());
     rtPipeline->updateDescriptorSets(infos);
 }

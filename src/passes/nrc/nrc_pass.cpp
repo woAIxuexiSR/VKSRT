@@ -1,7 +1,6 @@
 #include "nrc_pass.h"
 
 #include "camera.h"
-#include "gbuffer.h"
 #include "imgui.h"
 
 #include <cassert>
@@ -26,8 +25,7 @@ NRCPass::NRCPass(Device &_d, SwapChain &_sc, const json &params)
                      VK_IMAGE_USAGE_STORAGE_BIT},
       throughputImage{_d, VK_FORMAT_R32G32B32A32_SFLOAT, getNrcExtent(params, _sc),
                       VK_IMAGE_USAGE_STORAGE_BIT},
-      uniformBuffer{_d, sizeof(NRCUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT},
-      model{_d}
+      uniformBuffer{_d, sizeof(NRCUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT}
 {
     vkGetBufferDeviceAddressKHR = device.loadDeviceFunction<PFN_vkGetBufferDeviceAddressKHR>(
         "vkGetBufferDeviceAddressKHR");
@@ -40,10 +38,6 @@ NRCPass::NRCPass(Device &_d, SwapChain &_sc, const json &params)
         pushConstants.nrcQueryDepth = params["nrcQueryDepth"].get<int>();
     if (params.contains("trainFraction"))
         pushConstants.trainFraction = params["trainFraction"].get<int>();
-
-    SceneLoader::loadScene(params, model);
-    model.buildAccelerationStructures();
-    pushConstants.lightCount = model.getLightCount();
 
     auto extent = colorImage.getExtent();
     pushConstants.screenWidth = extent.width;
@@ -164,13 +158,15 @@ uint64_t NRCPass::getBufferDeviceAddress(VkBuffer buffer)
 
 void NRCPass::init()
 {
+    pushConstants.lightCount = scene->getLightCount();
+
     // RT pipeline descriptors (12 bindings)
     std::vector<DescriptorLayoutBinding> rtBindings = {
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR}, // 0: colorImage
         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR}, // 1: camera UBO
     };
     VkShaderStageFlags hitStages = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
-    auto modelBindings = model.getDescriptorBindings(hitStages);
+    auto modelBindings = scene->getDescriptorBindings(hitStages);
     rtBindings.insert(rtBindings.end(), modelBindings.begin(), modelBindings.end()); // 2-9
     // NRC intermediate images (10-11)
     rtBindings.push_back({VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR});
@@ -179,7 +175,7 @@ void NRCPass::init()
     rtPipeline = std::make_unique<RayTracingPipeline>(
         device, 1, rtBindings,
         shaderPath("nrc/nrc.spv"),
-        model.getHitSBTRecords(),
+        scene->getHitSBTRecords(),
         "raygenMain", "missMain", "closestHitMain",
         sizeof(NRCPushConstants));
 
@@ -187,7 +183,7 @@ void NRCPass::init()
         {VkDescriptorImageInfo{colorImage.getSampler(), colorImage.getImageView(), VK_IMAGE_LAYOUT_GENERAL}},
         {VkDescriptorBufferInfo{uniformBuffer.getBuffer(), 0, sizeof(NRCUniform)}},
     };
-    auto modelInfos = model.getDescriptorInfos();
+    auto modelInfos = scene->getDescriptorInfos();
     rtInfos.insert(rtInfos.end(), modelInfos.begin(), modelInfos.end());
     rtInfos.push_back({VkDescriptorImageInfo{shortPathImage.getSampler(), shortPathImage.getImageView(), VK_IMAGE_LAYOUT_GENERAL}});
     rtInfos.push_back({VkDescriptorImageInfo{throughputImage.getSampler(), throughputImage.getImageView(), VK_IMAGE_LAYOUT_GENERAL}});

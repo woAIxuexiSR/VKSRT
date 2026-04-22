@@ -10,17 +10,12 @@ WavefrontPTPass::WavefrontPTPass(Device &_d, SwapChain &_sc, const json &params)
     : PassBase(_d, _sc),
       colorImage{_d, VK_FORMAT_R32G32B32A32_SFLOAT, _sc.getExtent(),
                  VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT},
-      uniformBuffer{_d, sizeof(WFPTUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT},
-      model{_d}
+      uniformBuffer{_d, sizeof(WFPTUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT}
 {
     if (params.contains("maxDepth"))
         pushConstants.maxDepth = params["maxDepth"].get<int>();
     if (params.contains("rrDepth"))
         pushConstants.rrDepth = params["rrDepth"].get<int>();
-
-    SceneLoader::loadScene(params, model);
-    model.buildAccelerationStructures();
-    pushConstants.lightCount = model.getLightCount();
 
     auto extent = _sc.getExtent();
     pushConstants.screenWidth = extent.width;
@@ -62,6 +57,8 @@ WavefrontPTPass::WavefrontPTPass(Device &_d, SwapChain &_sc, const json &params)
 
 void WavefrontPTPass::init()
 {
+    pushConstants.lightCount = scene->getLightCount();
+
     VkShaderStageFlags cs = VK_SHADER_STAGE_COMPUTE_BIT;
 
     // All 6 pipelines share the same descriptor layout:
@@ -79,7 +76,7 @@ void WavefrontPTPass::init()
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, cs},   // 6: colorImage
         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, cs},  // 7: uniform
     };
-    auto modelBindings = model.getDescriptorBindings(VK_SHADER_STAGE_COMPUTE_BIT, true);
+    auto modelBindings = scene->getDescriptorBindings(VK_SHADER_STAGE_COMPUTE_BIT, true);
     bindings.insert(bindings.end(), modelBindings.begin(), modelBindings.end());
     // G-buffer (bindings 17-19)
     bindings.push_back({VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, cs});
@@ -109,7 +106,7 @@ void WavefrontPTPass::init()
         {VkDescriptorImageInfo{colorImage.getSampler(), colorImage.getImageView(), VK_IMAGE_LAYOUT_GENERAL}},
         {VkDescriptorBufferInfo{uniformBuffer.getBuffer(), 0, sizeof(WFPTUniform)}},
     };
-    auto modelInfos = model.getDescriptorInfos(true);
+    auto modelInfos = scene->getDescriptorInfos(true);
     infos.insert(infos.end(), modelInfos.begin(), modelInfos.end());
     // G-buffer
     infos.push_back({VkDescriptorImageInfo{gbuffer->getNormalSampler(), gbuffer->getNormalImageView(), VK_IMAGE_LAYOUT_GENERAL}});

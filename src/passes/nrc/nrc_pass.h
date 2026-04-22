@@ -4,7 +4,6 @@
 #include "pipeline.h"
 #include "resource.h"
 #include "ray_tracing_model.h"
-#include "scene_loader.h"
 #include "neural_network.h"
 
 #include <memory>
@@ -58,7 +57,8 @@ private:
     UniformBufferResource uniformBuffer;
     NRCPushConstants pushConstants;
 
-    RayTracingModel model;
+    Camera *camera{nullptr};
+    RayTracingModel *scene{nullptr};
     bool firstFrame{true};
 
     std::unique_ptr<StorageBufferResource> trainInputBuffer;
@@ -83,6 +83,9 @@ public:
     std::string getName() const override { return "NRC"; }
     bool canDisable() const override { return false; }
     PassImageSlot getOutputSlot() const override;
+
+    void setCamera(Camera *c) override { camera = c; }
+    void setScene(RayTracingModel *s) override { scene = s; }
 
     void init() override;
     void drawUI() override;

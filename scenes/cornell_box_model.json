@@ -4,22 +4,20 @@
     "target": [0.5, 0.5, 0.5],
     "fov": 60
   },
+  "scene": {
+    "type": "models",
+    "models": [
+      {
+        "path": "cornell_box/cornell_box.obj",
+        "scale": 0.0018,
+        "translation": [1.0, 0, 0],
+        "rotation": [-90, 180, 0]
+      }
+    ]
+  },
   "passes": [
     {
-      "type": "wavefront_pt",
-      "params": {
-        "scene": {
-          "type": "models",
-          "models": [
-            {
-              "path": "scenes/cornell_box/cornell_box.obj",
-              "scale": 0.0018,
-              "translation": [1.0, 0, 0],
-              "rotation": [-90, 180, 0]
-            }
-          ]
-        }
-      }
+      "type": "wavefront_pt"
     },
     { "type": "taa" },
     { "type": "tonemap" },

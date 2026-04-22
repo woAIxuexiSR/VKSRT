@@ -41,11 +41,12 @@ private:
 
 public:
     SwapChain(Device &_d, VkExtent2D _we, uint32_t _f);
-    SwapChain(Device &_d, VkExtent2D _we, uint32_t _f, VkSwapchainKHR _old);
     ~SwapChain();
 
     SwapChain(const SwapChain &) = delete;
     SwapChain &operator=(const SwapChain &) = delete;
+
+    void recreate(VkExtent2D newExtent);
 
     VkSwapchainKHR getSwapChain() const { return swapChain; }
     VkFormat getImageFormat() const { return swapChainImageFormat; }

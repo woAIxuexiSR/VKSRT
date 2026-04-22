@@ -4,7 +4,6 @@
 #include "pipeline.h"
 #include "resource.h"
 #include "ray_tracing_model.h"
-#include "scene_loader.h"
 
 #include <memory>
 
@@ -36,7 +35,9 @@ private:
     UniformBufferResource uniformBuffer;
     PTPushConstants pushConstants;
 
-    RayTracingModel model;
+    Camera *camera{nullptr};
+    GBuffer *gbuffer{nullptr};
+    RayTracingModel *scene{nullptr};
     bool firstFrame{true};
 
 public:
@@ -45,6 +46,10 @@ public:
     std::string getName() const override { return "PathTracing"; }
     bool canDisable() const override { return false; }
     PassImageSlot getOutputSlot() const override;
+
+    void setCamera(Camera *c) override { camera = c; }
+    void setGBuffer(GBuffer *gb) override { gbuffer = gb; }
+    void setScene(RayTracingModel *s) override { scene = s; }
 
     void init() override;
     void drawUI() override;

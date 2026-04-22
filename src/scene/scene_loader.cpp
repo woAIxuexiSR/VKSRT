@@ -7,6 +7,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <cmath>
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 
@@ -95,15 +96,8 @@ static glm::vec3 parseScale(const json &j, glm::vec3 def = {1, 1, 1})
 
 // --- Scene loading ---
 
-void SceneLoader::loadScene(const json &params, RayTracingModel &model)
+void SceneLoader::loadScene(const json &scene, RayTracingModel &model, const std::string &basePath)
 {
-    if (!params.contains("scene"))
-    {
-        buildCornellBox(model);
-        return;
-    }
-
-    auto &scene = params["scene"];
     std::string type = scene.value("type", "cornell_box");
 
     if (type == "models")
@@ -114,6 +108,10 @@ void SceneLoader::loadScene(const json &params, RayTracingModel &model)
         for (auto &entry : scene["models"])
         {
             std::string path = entry.at("path").get<std::string>();
+            std::filesystem::path p(path);
+            if (p.is_relative() && !basePath.empty())
+                path = (std::filesystem::path(basePath) / p).lexically_normal().string();
+
             glm::vec3 translation = entry.contains("translation") ? parseVec3(entry["translation"]) : glm::vec3(0);
             glm::vec3 rotation = entry.contains("rotation") ? parseVec3(entry["rotation"]) : glm::vec3(0);
             glm::vec3 scale = entry.contains("scale") ? parseScale(entry["scale"]) : glm::vec3(1);

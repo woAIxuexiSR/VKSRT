@@ -40,8 +40,7 @@ BranchPTPass::BranchPTPass(Device &_d, SwapChain &_sc, const json &params)
     : PassBase(_d, _sc),
       colorImage{_d, VK_FORMAT_R32G32B32A32_SFLOAT, _sc.getExtent(),
                  VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT},
-      uniformBuffer{_d, sizeof(BrPTUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT},
-      model{_d}
+      uniformBuffer{_d, sizeof(BrPTUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT}
 {
     if (params.contains("maxDepth"))
         pushConstants.maxDepth = params["maxDepth"].get<int>();
@@ -68,10 +67,6 @@ BranchPTPass::BranchPTPass(Device &_d, SwapChain &_sc, const json &params)
     pushConstants.innerSamples1 = innerSamples[1];
     pushConstants.innerSamples2 = innerSamples[2];
     pushConstants.innerSamples3 = innerSamples[3];
-
-    SceneLoader::loadScene(params, model);
-    model.buildAccelerationStructures();
-    pushConstants.lightCount = model.getLightCount();
 
     auto extent = _sc.getExtent();
     pushConstants.screenWidth = extent.width;
@@ -142,6 +137,8 @@ BranchPTPass::BranchPTPass(Device &_d, SwapChain &_sc, const json &params)
 
 void BranchPTPass::init()
 {
+    pushConstants.lightCount = scene->getLightCount();
+
     VkShaderStageFlags cs = VK_SHADER_STAGE_COMPUTE_BIT;
 
     // Descriptor layout:
@@ -155,7 +152,7 @@ void BranchPTPass::init()
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, cs},   // 3: colorImage
         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, cs},  // 4: uniform
     };
-    auto modelBindings = model.getDescriptorBindings(VK_SHADER_STAGE_COMPUTE_BIT, true);
+    auto modelBindings = scene->getDescriptorBindings(VK_SHADER_STAGE_COMPUTE_BIT, true);
     bindings.insert(bindings.end(), modelBindings.begin(), modelBindings.end());
     // Debias buffers (bindings 14-15)
     bindings.push_back({VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, cs});
@@ -180,7 +177,7 @@ void BranchPTPass::init()
         {VkDescriptorImageInfo{colorImage.getSampler(), colorImage.getImageView(), VK_IMAGE_LAYOUT_GENERAL}},
         {VkDescriptorBufferInfo{uniformBuffer.getBuffer(), 0, sizeof(BrPTUniform)}},
     };
-    auto modelInfos = model.getDescriptorInfos(true);
+    auto modelInfos = scene->getDescriptorInfos(true);
     infos.insert(infos.end(), modelInfos.begin(), modelInfos.end());
     // Debias buffers
     infos.push_back({VkDescriptorBufferInfo{debiasDirectBuffer->getBuffer(), 0, VK_WHOLE_SIZE}});

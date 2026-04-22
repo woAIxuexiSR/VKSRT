@@ -10,9 +10,6 @@ Camera::Camera(glm::vec3 _p, glm::vec3 _t, float _aspect, float _fov, float _n, 
 
 void Camera::processInput(InputState &inputState, float deltaTime)
 {
-    if (inputState.framebufferResized)
-        aspect = (float)inputState.width / (float)inputState.height;
-
     if (inputState.cursorChanged)
     {
         yaw += inputState.mouseDeltaX * sensitivity;

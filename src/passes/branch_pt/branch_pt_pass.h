@@ -4,7 +4,6 @@
 #include "pipeline.h"
 #include "resource.h"
 #include "ray_tracing_model.h"
-#include "scene_loader.h"
 
 #include <memory>
 #include <array>
@@ -101,8 +100,9 @@ private:
     UniformBufferResource uniformBuffer;
     BrPTPushConstants pushConstants;
 
-    // Scene
-    RayTracingModel model;
+    // Scene (injected)
+    Camera *camera{nullptr};
+    RayTracingModel *scene{nullptr};
     bool firstFrame{true};
 
     uint32_t totalPixels{0};
@@ -125,6 +125,9 @@ public:
     std::string getName() const override { return "BranchPT"; }
     bool canDisable() const override { return false; }
     PassImageSlot getOutputSlot() const override;
+
+    void setCamera(Camera *c) override { camera = c; }
+    void setScene(RayTracingModel *s) override { scene = s; }
 
     void init() override;
     void drawUI() override;

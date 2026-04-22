@@ -1,9 +1,9 @@
 {
+    "scene": { "type": "cornell_box" },
     "passes": [
         {
             "type": "branch_pt",
             "params": {
-                "scene": { "type": "cornell_box" },
                 "maxDepth": 4,
                 "rrDepth": 3,
                 "innerSamples": [4, 2, 1, 1],

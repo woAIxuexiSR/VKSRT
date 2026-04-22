@@ -1,11 +1,11 @@
 {
+  "scene": {
+    "type": "cornell_box"
+  },
   "passes": [
     {
       "type": "light_tracing",
       "params": {
-        "scene": {
-          "type": "cornell_box"
-        },
         "maxDepth": 8,
         "rrDepth": 3
       }

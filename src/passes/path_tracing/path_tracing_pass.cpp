@@ -10,28 +10,24 @@ PathTracingPass::PathTracingPass(Device &_d, SwapChain &_sc, const json &params)
     : PassBase(_d, _sc),
       colorImage{_d, VK_FORMAT_R32G32B32A32_SFLOAT, _sc.getExtent(),
                  VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT},
-      uniformBuffer{_d, sizeof(PTUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT},
-      model{_d}
+      uniformBuffer{_d, sizeof(PTUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT}
 {
     if (params.contains("maxDepth"))
         pushConstants.maxDepth = params["maxDepth"].get<int>();
     if (params.contains("rrDepth"))
         pushConstants.rrDepth = params["rrDepth"].get<int>();
-
-    SceneLoader::loadScene(params, model);
-
-    model.buildAccelerationStructures();
-    pushConstants.lightCount = model.getLightCount();
 }
 
 void PathTracingPass::init()
 {
+    pushConstants.lightCount = scene->getLightCount();
+
     std::vector<DescriptorLayoutBinding> bindings = {
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR},
         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR},
     };
     VkShaderStageFlags hitStages = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
-    auto modelBindings = model.getDescriptorBindings(hitStages);
+    auto modelBindings = scene->getDescriptorBindings(hitStages);
     bindings.insert(bindings.end(), modelBindings.begin(), modelBindings.end());
     // G-buffer: normal (binding 10), position (binding 11), albedo (binding 12)
     bindings.push_back({VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR});
@@ -41,7 +37,7 @@ void PathTracingPass::init()
     rtPipeline = std::make_unique<RayTracingPipeline>(
         device, 1, bindings,
         shaderPath("path_tracing/path_tracing.spv"),
-        model.getHitSBTRecords(),
+        scene->getHitSBTRecords(),
         "raygenMain", "missMain", "closestHitMain",
         sizeof(PTPushConstants));
 
@@ -49,7 +45,7 @@ void PathTracingPass::init()
         {VkDescriptorImageInfo{colorImage.getSampler(), colorImage.getImageView(), VK_IMAGE_LAYOUT_GENERAL}},
         {VkDescriptorBufferInfo{uniformBuffer.getBuffer(), 0, sizeof(PTUniform)}},
     };
-    auto modelInfos = model.getDescriptorInfos();
+    auto modelInfos = scene->getDescriptorInfos();
     infos.insert(infos.end(), modelInfos.begin(), modelInfos.end());
     // G-buffer descriptors (App-managed)
     infos.push_back({VkDescriptorImageInfo{gbuffer->getNormalSampler(), gbuffer->getNormalImageView(), VK_IMAGE_LAYOUT_GENERAL}});

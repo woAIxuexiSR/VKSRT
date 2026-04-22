@@ -1,12 +1,10 @@
 {
+  "scene": {
+    "type": "cornell_box"
+  },
   "passes": [
     {
-      "type": "ray_tracing",
-      "params": {
-        "scene": {
-          "type": "cornell_box"
-        }
-      }
+      "type": "ray_tracing"
     },
     { "type": "tonemap" },
     { "type": "blit" }

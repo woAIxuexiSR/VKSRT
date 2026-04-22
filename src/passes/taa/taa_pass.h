@@ -39,11 +39,17 @@ private:
     VkImageView lastBoundInputView{VK_NULL_HANDLE};
     VkSampler lastBoundInputSampler{VK_NULL_HANDLE};
 
+    Camera *camera{nullptr};
+    GBuffer *gbuffer{nullptr};
+
 public:
     TAAPass(Device &_d, SwapChain &_sc, const json &params);
 
     std::string getName() const override { return "TAA"; }
     PassImageSlot getOutputSlot() const override;
+
+    void setCamera(Camera *c) override { camera = c; }
+    void setGBuffer(GBuffer *gb) override { gbuffer = gb; }
 
     void init() override;
     void drawUI() override;

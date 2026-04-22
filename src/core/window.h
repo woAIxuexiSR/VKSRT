@@ -27,7 +27,7 @@ struct InputState
     bool keyQ{false}, keyW{false}, keyE{false};
     bool keyA{false}, keyS{false}, keyD{false};
 
-    bool isChanged() const { return framebufferResized || cursorChanged || scrollChanged || keyboardChanged; }
+    bool isChanged() const { return cursorChanged || scrollChanged || keyboardChanged; }
 };
 
 class Window

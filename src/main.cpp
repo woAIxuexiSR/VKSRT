@@ -12,6 +12,8 @@
 #include "pass_base.h"
 #include "camera.h"
 #include "gbuffer.h"
+#include "ray_tracing_model.h"
+#include "scene_loader.h"
 #include "blit_pass.h"
 #include "project_config.h"
 
@@ -19,9 +21,9 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <filesystem>
 #include <cstring>
 #include <algorithm>
+#include <filesystem>
 
 #include "stb_image_write.h"
 
@@ -37,7 +39,7 @@ struct OfflineConfig
 
 class Application
 {
-public:
+private:
     OfflineConfig offlineConfig;
 
     Window window;
@@ -50,6 +52,8 @@ public:
     std::vector<std::shared_ptr<PassBase>> passes;
     Camera camera;
     std::unique_ptr<GBuffer> gbuffer;
+    std::unique_ptr<RayTracingModel> scene;
+
     float lastTime{0.0f};
     uint32_t currentFrame{0};
     bool saveRequested{false};
@@ -73,12 +77,38 @@ public:
         if (vkAllocateCommandBuffers(device.getDevice(), &allocInfo, commandBuffers.data()) != VK_SUCCESS)
             throw std::runtime_error("failed to allocate command buffers!");
 
-        // Pipeline::loadPipelineCache(device, "../../build/pipeline_cache.bin");
+        // Pipeline::loadPipelineCache(device, std::string(PROJECT_ROOT) + "/build/pipeline_cache.bin");
 
         RenderPassFactory::printRegistered();
         loadConfig(configPath);
     }
 
+    void run()
+    {
+        if (offlineConfig.enabled)
+        {
+            PassImageSlot slot = drawOffline();
+            if (slot.image == VK_NULL_HANDLE)
+                throw std::runtime_error("no valid pass output for offline save!");
+
+            saveImageToPNG(slot.image, slot.format, slot.extent,
+                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, offlineConfig.outputFilename);
+        }
+        else
+        {
+            while (!window.shouldClose())
+            {
+                window.pollEvents();
+                drawFrame();
+            }
+            vkDeviceWaitIdle(device.getDevice());
+        }
+
+        // Pipeline::savePipelineCache(device, std::string(PROJECT_ROOT) + "/build/pipeline_cache.bin");
+        // Pipeline::destroyPipelineCache(device);
+    }
+
+private:
     void loadConfig(const std::string &configPath)
     {
         std::ifstream file(configPath);
@@ -112,6 +142,15 @@ public:
 
         passes.clear();
 
+        // Load scene (App-managed, shared across passes; optional for non-RT passes)
+        if (config.contains("scene"))
+        {
+            std::string basePath = std::filesystem::absolute(configPath).parent_path().string();
+            scene = std::make_unique<RayTracingModel>(device);
+            SceneLoader::loadScene(config["scene"], *scene, basePath);
+            scene->buildAccelerationStructures();
+        }
+
         // Phase 1: Create all passes
         for (auto &passConfig : config["passes"])
         {
@@ -125,41 +164,26 @@ public:
         // Create G-buffer (App-managed, shared across passes)
         gbuffer = std::make_unique<GBuffer>(device, swapChain->getExtent());
 
-        // Phase 2: Wire input slots, G-buffer, inject camera, and init passes (chain order)
+        // Phase 2: Wire input slots + inject dependencies, then init (chain order)
         PassImageSlot prevSlot{};
         for (auto &pass : passes)
         {
             pass->setCamera(&camera);
             pass->setGBuffer(gbuffer.get());
+            pass->setScene(scene.get());
             pass->setInputSlot(prevSlot);
             pass->init();
             prevSlot = pass->getOutputSlot();
         }
     }
 
-    void run()
-    {
-        if (offlineConfig.enabled)
-        {
-            runOffline();
-            return;
-        }
-        while (!window.shouldClose())
-        {
-            window.pollEvents();
-            drawFrame();
-        }
-        vkDeviceWaitIdle(device.getDevice());
-    }
-
-    void runOffline()
+    PassImageSlot drawOffline()
     {
         // Set blit pass to offline mode (renders to dedicated image with TRANSFER_SRC)
         for (auto &pass : passes)
             if (auto *blit = dynamic_cast<BlitPass *>(pass.get()))
                 blit->setOfflineMode(true);
 
-        // Create a fence for CPU-GPU sync (no swapchain semaphores)
         VkFenceCreateInfo fenceInfo{};
         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         VkFence fence;
@@ -167,18 +191,15 @@ public:
             throw std::runtime_error("failed to create offline fence!");
 
         int totalSamples = offlineConfig.samples;
-        InputState dummyInput{}; // all zeros, isChanged() always false
-
+        InputState dummyInput{};
         auto startTime = std::chrono::high_resolution_clock::now();
-        PassImageSlot lastSlot{};
+        PassImageSlot slot{};
 
         for (int sample = 0; sample < totalSamples; sample++)
         {
-            // Update passes with dummy input (no camera movement)
             for (auto &pass : passes)
                 pass->update(currentFrame, dummyInput);
 
-            // Record pass commands (no ImGui, no swapchain)
             vkResetCommandBuffer(commandBuffers[currentFrame], 0);
 
             VkCommandBufferBeginInfo beginInfo{};
@@ -187,14 +208,13 @@ public:
             if (vkBeginCommandBuffer(commandBuffers[currentFrame], &beginInfo) != VK_SUCCESS)
                 throw std::runtime_error("failed to begin recording command buffer!");
 
-            lastSlot = {};
+            slot = {};
             for (auto &pass : passes)
-                lastSlot = pass->recordCommand(commandBuffers[currentFrame], lastSlot, currentFrame, 0);
+                slot = pass->recordCommand(commandBuffers[currentFrame], slot, currentFrame, 0);
 
             if (vkEndCommandBuffer(commandBuffers[currentFrame]) != VK_SUCCESS)
                 throw std::runtime_error("failed to record command buffer!");
 
-            // Submit with fence only — no semaphores, no present
             VkSubmitInfo submitInfo{};
             submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
             submitInfo.commandBufferCount = 1;
@@ -207,11 +227,11 @@ public:
 
             camera.updatePrevMatrices();
             for (auto &pass : passes)
-                pass->endFrame();
+                if (pass->isEnabled())
+                    pass->endFrame();
 
             currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 
-            // Progress output
             auto now = std::chrono::high_resolution_clock::now();
             float elapsed = std::chrono::duration<float>(now - startTime).count();
             float perSample = elapsed / (sample + 1);
@@ -229,26 +249,16 @@ public:
         printf("\nRendering done: %d samples in %.2fs (%.2f samples/s)\n",
                totalSamples, totalTime, totalSamples / totalTime);
 
-        if (lastSlot.image == VK_NULL_HANDLE)
-            throw std::runtime_error("no valid pass output for offline save!");
-
-        saveOfflineImage(lastSlot, offlineConfig.outputFilename);
-
         vkDeviceWaitIdle(device.getDevice());
         vkDestroyFence(device.getDevice(), fence, nullptr);
+        return slot;
     }
 
-private:
     void recreateSwapChain()
     {
         window.checkIdle();
         vkDeviceWaitIdle(device.getDevice());
-
-        auto extent = window.getExtent();
-        if (swapChain == nullptr)
-            swapChain = std::make_unique<SwapChain>(device, extent, MAX_FRAMES_IN_FLIGHT);
-        else
-            swapChain = std::make_unique<SwapChain>(device, extent, MAX_FRAMES_IN_FLIGHT, swapChain->getSwapChain());
+        swapChain->recreate(window.getExtent());
     }
 
     void drawFrame()
@@ -283,7 +293,7 @@ private:
         ImGui::NewFrame();
 
         ImGui::SetNextWindowPos(ImVec2(50, 50), ImGuiCond_Once);
-        ImGui::SetNextWindowSize(ImVec2(450, 450), ImGuiCond_Once);
+        ImGui::SetNextWindowSize(ImVec2(580, 900), ImGuiCond_Once);
         ImGui::Begin("VKSRT");
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
         if (ImGui::Button("Save Image"))
@@ -336,16 +346,17 @@ private:
             currentFrame, imageIndex);
 
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || inputState.framebufferResized)
-        {
-            window.resetInputState();
             recreateSwapChain();
-        }
         else if (result != VK_SUCCESS)
             throw std::runtime_error("failed to present swap chain image!");
 
         if (saveRequested && result == VK_SUCCESS)
         {
-            saveImage(imageIndex);
+            saveImageToPNG(swapChain->getImage(imageIndex),
+                           swapChain->getImageFormat(),
+                           swapChain->getExtent(),
+                           VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                           saveFilename);
             saveRequested = false;
         }
 
@@ -359,62 +370,14 @@ private:
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     }
 
-    void saveImage(uint32_t imageIndex)
+    void saveImageToPNG(VkImage image, VkFormat format, VkExtent2D extent,
+                        VkImageLayout currentLayout, const std::string &outputName)
     {
         vkDeviceWaitIdle(device.getDevice());
 
-        auto extent = swapChain->getExtent();
         uint32_t width = extent.width;
         uint32_t height = extent.height;
-        uint32_t bytesPerPixel = 4;
-        VkDeviceSize imageSize = width * height * bytesPerPixel;
-
-        VkBuffer stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
-        device.createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                            stagingBuffer, stagingBufferMemory);
-
-        VkCommandBuffer cmd = device.beginSingleTimeCommands();
-
-        device.imageBarrier(cmd, swapChain->getImage(imageIndex),
-                            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                            0, VK_ACCESS_2_TRANSFER_READ_BIT,
-                            VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, 1);
-
-        device.copyImageToBuffer(cmd, swapChain->getImage(imageIndex), stagingBuffer, width, height, bytesPerPixel);
-
-        device.endSingleTimeCommands(cmd);
-
-        void *mapped;
-        std::vector<uint8_t> pixels(imageSize);
-        vkMapMemory(device.getDevice(), stagingBufferMemory, 0, imageSize, 0, &mapped);
-        memcpy(pixels.data(), mapped, static_cast<size_t>(imageSize));
-        vkUnmapMemory(device.getDevice(), stagingBufferMemory);
-
-        // Swapchain is B8G8R8A8: swap B and R channels
-        VkFormat format = swapChain->getImageFormat();
-        if (format == VK_FORMAT_B8G8R8A8_SRGB || format == VK_FORMAT_B8G8R8A8_UNORM)
-        {
-            for (uint32_t i = 0; i < width * height; i++)
-                std::swap(pixels[i * 4 + 0], pixels[i * 4 + 2]);
-        }
-
-        std::string filename = std::string(saveFilename) + ".png";
-        stbi_write_png(filename.c_str(), width, height, bytesPerPixel, pixels.data(), bytesPerPixel * width);
-        std::cout << "Saved: " << filename << std::endl;
-
-        vkDestroyBuffer(device.getDevice(), stagingBuffer, nullptr);
-        vkFreeMemory(device.getDevice(), stagingBufferMemory, nullptr);
-    }
-
-    void saveOfflineImage(const PassImageSlot &slot, const std::string &outputName)
-    {
-        vkDeviceWaitIdle(device.getDevice());
-
-        uint32_t width = slot.extent.width;
-        uint32_t height = slot.extent.height;
-        bool isFloat = (slot.format == VK_FORMAT_R32G32B32A32_SFLOAT);
+        bool isFloat = (format == VK_FORMAT_R32G32B32A32_SFLOAT);
         uint32_t srcBytesPerPixel = isFloat ? 16 : 4;
         VkDeviceSize bufferSize = (VkDeviceSize)width * height * srcBytesPerPixel;
 
@@ -424,9 +387,17 @@ private:
                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                             stagingBuffer, stagingBufferMemory);
 
-        // Image is already in TRANSFER_SRC_OPTIMAL (transitioned in last frame's cmd buffer)
         VkCommandBuffer cmd = device.beginSingleTimeCommands();
-        device.copyImageToBuffer(cmd, slot.image, stagingBuffer, width, height, srcBytesPerPixel);
+
+        if (currentLayout != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)
+        {
+            device.imageBarrier(cmd, image,
+                                currentLayout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                0, VK_ACCESS_2_TRANSFER_READ_BIT,
+                                VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, 1);
+        }
+
+        device.copyImageToBuffer(cmd, image, stagingBuffer, width, height, srcBytesPerPixel);
         device.endSingleTimeCommands(cmd);
 
         void *mapped;
@@ -436,14 +407,13 @@ private:
 
         if (isFloat)
         {
-            // RGBA32F -> 8-bit sRGB PNG
+            // RGBA32F -> 8-bit sRGB PNG (linear to sRGB gamma encoding)
             const float *src = static_cast<const float *>(mapped);
             for (uint32_t i = 0; i < width * height; i++)
             {
                 for (int c = 0; c < 3; c++)
                 {
                     float v = std::max(0.0f, std::min(1.0f, src[i * 4 + c]));
-                    // Linear to sRGB
                     if (v <= 0.0031308f)
                         v = 12.92f * v;
                     else
@@ -456,8 +426,7 @@ private:
         else
         {
             memcpy(pixels.data(), mapped, width * height * 4);
-            // Handle BGRA formats
-            if (slot.format == VK_FORMAT_B8G8R8A8_SRGB || slot.format == VK_FORMAT_B8G8R8A8_UNORM)
+            if (format == VK_FORMAT_B8G8R8A8_SRGB || format == VK_FORMAT_B8G8R8A8_UNORM)
             {
                 for (uint32_t i = 0; i < width * height; i++)
                     std::swap(pixels[i * 4 + 0], pixels[i * 4 + 2]);
@@ -477,17 +446,17 @@ private:
 
 static void printUsage(const char *prog)
 {
-    std::cout <<
-        "Usage: " << prog << " [options] [config.json]\n"
-        "\n"
-        "Options:\n"
-        "  -h, --help            Show this help and exit\n"
-        "  --config <path>       Path to scene config JSON (relative to cwd or absolute).\n"
-        "                        Defaults to " << PROJECT_ROOT << "/config.json\n"
-        "  --offline <samples>   Run offline, render N samples and save to PNG\n"
-        "  --output <name>       Output filename (without extension) for --offline. Default: output\n"
-        "\n"
-        "A bare positional argument is treated as the config path, same as --config.\n";
+    std::cout << "Usage: " << prog << " [options] [config.json]\n"
+                                      "\n"
+                                      "Options:\n"
+                                      "  -h, --help            Show this help and exit\n"
+                                      "  --config <path>       Path to scene config JSON (relative to cwd or absolute).\n"
+                                      "                        Defaults to "
+              << PROJECT_ROOT << "/config.json\n"
+                                 "  --offline <samples>   Run offline, render N samples and save to PNG\n"
+                                 "  --output <name>       Output filename (without extension) for --offline. Default: output\n"
+                                 "\n"
+                                 "A bare positional argument is treated as the config path, same as --config.\n";
 }
 
 int main(int argc, char *argv[])

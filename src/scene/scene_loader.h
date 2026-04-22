@@ -9,7 +9,8 @@ using json = nlohmann::json;
 class SceneLoader
 {
 public:
-    static void loadScene(const json &params, RayTracingModel &model);
+    // basePath: directory to resolve relative model paths against (typically config file's directory).
+    static void loadScene(const json &scene, RayTracingModel &model, const std::string &basePath = "");
 
     static void loadModel(const std::string &path, RayTracingModel &model,
                           const glm::mat4 &transform = glm::mat4(1.0f),

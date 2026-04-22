@@ -1,9 +1,9 @@
 {
+  "scene": { "type": "cornell_box" },
   "passes": [
     {
       "type": "nrc",
       "params": {
-        "scene": { "type": "cornell_box" },
         "maxDepth": 8,
         "rrDepth": 3,
         "nrcQueryDepth": 1,

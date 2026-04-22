@@ -14,9 +14,10 @@
 
 using json = nlohmann::json;
 
-struct InputState; // forward declare
-class Camera;      // forward declare
-class GBuffer;     // forward declare
+struct InputState;       // forward declare
+class Camera;            // forward declare
+class GBuffer;           // forward declare
+class RayTracingModel;   // forward declare
 
 // Image slot for inter-pass communication
 struct PassImageSlot
@@ -36,8 +37,6 @@ protected:
     Device &device;
     SwapChain &swapChain;
     bool enabled = true;
-    Camera *camera{nullptr};
-    GBuffer *gbuffer{nullptr};
 
     PassImageSlot initInputSlot;
 
@@ -56,11 +55,10 @@ public:
     bool isEnabled() const { return enabled; }
     virtual bool canDisable() const { return true; }
 
-    // --- Camera ---
-    void setCamera(Camera *cam) { camera = cam; }
-
-    // --- G-buffer ---
-    void setGBuffer(GBuffer *gb) { gbuffer = gb; }
+    // --- Dependency injection (App-managed, non-owning). Override in passes that need them. ---
+    virtual void setCamera(Camera *) {}
+    virtual void setGBuffer(GBuffer *) {}
+    virtual void setScene(RayTracingModel *) {}
 
     // --- Image slot wiring ---
     void setInputSlot(const PassImageSlot &slot) { initInputSlot = slot; }

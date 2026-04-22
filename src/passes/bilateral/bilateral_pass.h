@@ -25,11 +25,15 @@ private:
     VkImageView lastBoundInputView{VK_NULL_HANDLE};
     VkSampler lastBoundInputSampler{VK_NULL_HANDLE};
 
+    GBuffer *gbuffer{nullptr};
+
 public:
     BilateralPass(Device &_d, SwapChain &_sc, const json &params);
 
     std::string getName() const override { return "Bilateral"; }
     PassImageSlot getOutputSlot() const override;
+
+    void setGBuffer(GBuffer *gb) override { gbuffer = gb; }
 
     void init() override;
     void drawUI() override;

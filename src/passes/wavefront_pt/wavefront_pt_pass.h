@@ -4,7 +4,6 @@
 #include "pipeline.h"
 #include "resource.h"
 #include "ray_tracing_model.h"
-#include "scene_loader.h"
 
 #include <memory>
 
@@ -105,8 +104,10 @@ private:
     UniformBufferResource uniformBuffer;
     WFPTPushConstants pushConstants;
 
-    // Scene
-    RayTracingModel model;
+    // Scene (injected)
+    Camera *camera{nullptr};
+    GBuffer *gbuffer{nullptr};
+    RayTracingModel *scene{nullptr};
     bool firstFrame{true};
 
     uint32_t totalPaths{0};
@@ -119,6 +120,10 @@ public:
     std::string getName() const override { return "WavefrontPT"; }
     bool canDisable() const override { return false; }
     PassImageSlot getOutputSlot() const override;
+
+    void setCamera(Camera *c) override { camera = c; }
+    void setGBuffer(GBuffer *gb) override { gbuffer = gb; }
+    void setScene(RayTracingModel *s) override { scene = s; }
 
     void init() override;
     void drawUI() override;

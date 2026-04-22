@@ -1,7 +1,6 @@
 #include "light_tracing_pass.h"
 
 #include "camera.h"
-#include "gbuffer.h"
 #include "imgui.h"
 
 REGISTER_RENDER_PASS_CPP(LightTracingPass, "light_tracing");
@@ -16,22 +15,18 @@ LightTracingPass::LightTracingPass(Device &_d, SwapChain &_sc, const json &param
              VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT},
       colorImage{_d, VK_FORMAT_R32G32B32A32_SFLOAT, _sc.getExtent(),
                  VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT},
-      uniformBuffer{_d, sizeof(LTUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT},
-      model{_d}
+      uniformBuffer{_d, sizeof(LTUniform), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT}
 {
     if (params.contains("maxDepth"))
         pushConstants.maxDepth = params["maxDepth"].get<int>();
     if (params.contains("rrDepth"))
         pushConstants.rrDepth = params["rrDepth"].get<int>();
-
-    SceneLoader::loadScene(params, model);
-
-    model.buildAccelerationStructures();
-    pushConstants.lightCount = model.getLightCount();
 }
 
 void LightTracingPass::init()
 {
+    pushConstants.lightCount = scene->getLightCount();
+
     // RT pipeline: TLAS(0), uniform(1), vertices(2), indices(3), materials(4),
     //              normals(5), texcoords(6), lights(7), instanceTransforms(8),
     //              splatR(9), splatG(10), splatB(11)
@@ -54,12 +49,12 @@ void LightTracingPass::init()
     rtPipeline = std::make_unique<RayTracingPipeline>(
         device, 1, rtBindings,
         shaderPath("light_tracing/light_tracing.spv"),
-        model.getHitSBTRecords(),
+        scene->getHitSBTRecords(),
         "raygenMain", "missMain", "closestHitMain",
         sizeof(LTPushConstants));
 
     // Descriptor infos for RT pipeline
-    auto modelInfos = model.getDescriptorInfos();
+    auto modelInfos = scene->getDescriptorInfos();
     // modelInfos order: TLAS, vertices, indices, materials, normals, texcoords, lights, instanceTransforms
     std::vector<std::vector<DescriptorInfo>> rtInfos;
     rtInfos.push_back(modelInfos[0]); // TLAS (binding 0)

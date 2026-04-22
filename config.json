@@ -1,12 +1,10 @@
 {
+  "scene": {
+    "type": "cornell_box"
+  },
   "passes": [
     {
-      "type": "path_tracing",
-      "params": {
-        "scene": {
-          "type": "cornell_box"
-        }
-      }
+      "type": "path_tracing"
     },
     {
       "type": "taa"

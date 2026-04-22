@@ -9,15 +9,6 @@ SwapChain::SwapChain(Device &_d, VkExtent2D _we, uint32_t _f)
     createSyncObjects();
 }
 
-SwapChain::SwapChain(Device &_d, VkExtent2D _we, uint32_t _f, VkSwapchainKHR _old)
-    : device(_d), windowExtent(_we), framesInFlight(_f), oldSwapChain(_old)
-{
-    createSwapChain();
-    createImageViews();
-    depthResource = std::make_unique<ImageResource>(device, device.findDepthFormat(), swapChainExtent, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
-    createSyncObjects();
-}
-
 SwapChain::~SwapChain()
 {
     for (auto imageView : swapChainImageViews)
@@ -33,6 +24,39 @@ SwapChain::~SwapChain()
     }
     for (size_t i = 0; i < imageCount; i++)
         vkDestroySemaphore(device.getDevice(), renderFinishedSemaphores[i], nullptr);
+}
+
+void SwapChain::recreate(VkExtent2D newExtent)
+{
+    windowExtent = newExtent;
+
+    VkSwapchainKHR oldHandle = swapChain;
+
+    for (auto imageView : swapChainImageViews)
+        vkDestroyImageView(device.getDevice(), imageView, nullptr);
+    swapChainImageViews.clear();
+    depthResource.reset();
+
+    for (size_t i = 0; i < framesInFlight; i++)
+    {
+        vkDestroySemaphore(device.getDevice(), imageAvailableSemaphores[i], nullptr);
+        vkDestroyFence(device.getDevice(), inFlightFences[i], nullptr);
+    }
+    for (size_t i = 0; i < imageCount; i++)
+        vkDestroySemaphore(device.getDevice(), renderFinishedSemaphores[i], nullptr);
+    imageAvailableSemaphores.clear();
+    renderFinishedSemaphores.clear();
+    inFlightFences.clear();
+
+    oldSwapChain = oldHandle;
+    createSwapChain();
+    createImageViews();
+    depthResource = std::make_unique<ImageResource>(device, device.findDepthFormat(), swapChainExtent,
+                                                    VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
+    createSyncObjects();
+
+    vkDestroySwapchainKHR(device.getDevice(), oldHandle, nullptr);
+    oldSwapChain = VK_NULL_HANDLE;
 }
 
 void SwapChain::createSwapChain()
