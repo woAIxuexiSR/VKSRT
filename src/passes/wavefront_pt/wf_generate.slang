@@ -2,13 +2,7 @@
 // 2D dispatch: [width/16, height/16, 1]
 
 import wavefront_structs;
-import rng;
-
-struct CameraProperties
-{
-    float4x4 viewInverse;
-    float4x4 projInverse;
-};
+import camera;
 
 struct PushConstants
 {
@@ -59,17 +53,9 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 
     int idx = pixel.y * pc.screenWidth + pixel.x;
 
-    uint seed = wangHash(uint(pixel.x * 1973u + pixel.y * 9277u + uint(pc.frameIndex) * 26699u) | 1u);
-
-    // Pixel jitter for anti-aliasing
-    float2 jitter = randFloat2(seed);
-    float2 pixelCenter = float2(pixel) + jitter;
-    float2 inUV = pixelCenter / float2(pc.screenWidth, pc.screenHeight);
-    float2 d = inUV * 2.0 - 1.0;
-
-    float4 origin = mul(cam.viewInverse, float4(0, 0, 0, 1));
-    float4 target = mul(cam.projInverse, float4(d.x, d.y, 1, 1));
-    float4 direction = mul(cam.viewInverse, float4(normalize(target.xyz), 0));
+    uint seed = seedFromPixel(uint2(pixel), uint(pc.frameIndex));
+    float3 rayOrigin, rayDir;
+    generatePrimaryRay(cam, uint2(pixel), uint2(pc.screenWidth, pc.screenHeight), seed, rayOrigin, rayDir);
 
     // Initialize path state
     PathState path;
@@ -85,9 +71,9 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 
     // Initialize ray
     RayData ray;
-    ray.origin = origin.xyz;
+    ray.origin = rayOrigin;
     ray.tMin = 0.001;
-    ray.direction = normalize(direction.xyz);
+    ray.direction = rayDir;
     ray.tMax = 10000.0;
     rays[idx] = ray;
 

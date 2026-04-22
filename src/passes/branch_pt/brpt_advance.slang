@@ -79,7 +79,7 @@ StructuredBuffer<MeshInfo> meshInfos;
 [[vk::binding(14)]]
 RWStructuredBuffer<float4> debiasDirectBuffer;
 
-float3 getVertexPos(uint index)
+float3 getVertex(uint index)
 {
     return float3(vertexData[index * 3], vertexData[index * 3 + 1], vertexData[index * 3 + 2]);
 }
@@ -139,9 +139,9 @@ InlineHitResult traceRay(float3 origin, float3 dir, float tMin, float tMax)
         uint i1 = indices[(mi.indexOffset + primIdx) * 3 + 1];
         uint i2 = indices[(mi.indexOffset + primIdx) * 3 + 2];
 
-        float3 v0 = getVertexPos(i0 + mi.vertexOffset);
-        float3 v1 = getVertexPos(i1 + mi.vertexOffset);
-        float3 v2 = getVertexPos(i2 + mi.vertexOffset);
+        float3 v0 = getVertex(i0 + mi.vertexOffset);
+        float3 v1 = getVertex(i1 + mi.vertexOffset);
+        float3 v2 = getVertex(i2 + mi.vertexOffset);
 
         float3 n0 = getNormal(i0 + mi.vertexOffset);
         float3 n1 = getNormal(i1 + mi.vertexOffset);
@@ -228,7 +228,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
                 float totalArea = 0.0;
                 for (int li = 0; li < pc.lightCount; li++)
                     totalArea += lights[li].area;
-                if (cosLight > 1e-4 && totalArea > 0.0)
+                if (cosLight > COS_EPSILON && totalArea > 0.0)
                 {
                     float pdfLight = dist2 / (totalArea * cosLight);
                     misWeight = powerHeuristic(vtx.prevBsdfPdf, pdfLight);
@@ -341,9 +341,9 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
             LightTriangle lt = lights[lightIdx];
             uint3 triIdx = getTriIndices(lt.indexOffset);
             float3x4 lightXform = instanceTransforms[lt.instanceIndex];
-            float3 lv0 = transformPosition(lightXform, getVertexPos(triIdx.x + lt.vertexOffset));
-            float3 lv1 = transformPosition(lightXform, getVertexPos(triIdx.y + lt.vertexOffset));
-            float3 lv2 = transformPosition(lightXform, getVertexPos(triIdx.z + lt.vertexOffset));
+            float3 lv0 = transformPosition(lightXform, getVertex(triIdx.x + lt.vertexOffset));
+            float3 lv1 = transformPosition(lightXform, getVertex(triIdx.y + lt.vertexOffset));
+            float3 lv2 = transformPosition(lightXform, getVertex(triIdx.z + lt.vertexOffset));
 
             float3 lightPoint = samplePointOnTriangle(lv0, lv1, lv2, randFloat2(vtx.seed));
             float3 lightNormal = normalize(cross(lv1 - lv0, lv2 - lv0));
@@ -355,7 +355,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
             float cosHit = dot(shadingN, lightDir);
             float cosLight = abs(dot(lightNormal, -lightDir));
 
-            if (cosHit > 1e-4 && cosLight > 1e-4)
+            if (cosHit > COS_EPSILON && cosLight > COS_EPSILON)
             {
                 // Inline shadow trace
                 if (traceShadow(vtx.hitPos, lightDir, dist - 0.001))
@@ -397,7 +397,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
         // --- BRDF sampling for child ---
         BRDFSample s = brdfSample(wo_local, mat, randFloat3(vtx.seed));
 
-        if (!s.valid || s.pdf < 1e-6)
+        if (!s.valid || s.pdf < PDF_EPSILON)
         {
             vtx.seed = wangHash(vtx.seed);
             continue;

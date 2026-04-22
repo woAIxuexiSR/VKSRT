@@ -1,6 +1,6 @@
 // Write MLP output buffer to an image. Also supports showing ground truth.
 // Each thread handles one pixel.
-static const float PI = 3.14159265358979323846;
+import math_utils;
 
 struct WriteImagePushConstants
 {

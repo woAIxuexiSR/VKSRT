@@ -5,6 +5,7 @@ import material;
 import brdf;
 import onb;
 import math_utils;
+import camera;
 
 [raypayload]
 struct RayPayload
@@ -14,12 +15,6 @@ struct RayPayload
     float3 hitNormal : read(caller) : write(caller, closesthit, miss);
     float2 hitUV : read(caller) : write(caller, closesthit, miss);
     int matIndex : read(caller) : write(caller, closesthit, miss);
-};
-
-struct CameraProperties
-{
-    float4x4 viewInverse;
-    float4x4 projInverse;
 };
 
 struct PushConstants

@@ -151,7 +151,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
                 float totalArea = 0.0;
                 for (int li = 0; li < pc.lightCount; li++)
                     totalArea += lights[li].area;
-                if (cosLight > 1e-4 && totalArea > 0.0)
+                if (cosLight > COS_EPSILON && totalArea > 0.0)
                 {
                     float pdfLight = dist2 / (totalArea * cosLight);
                     misWeight = powerHeuristic(path.prevBsdfPdf, pdfLight);
@@ -202,7 +202,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
         float cosHit = dot(shadingN, lightDir);
         float cosLight = abs(dot(lightNormal, -lightDir));
 
-        if (cosHit > 1e-4 && cosLight > 1e-4)
+        if (cosHit > COS_EPSILON && cosLight > COS_EPSILON)
         {
             Material lightMat = materials[lt.matIndex];
             float3 lightEmission = lightMat.emission.rgb * lightMat.emission.a;
@@ -244,7 +244,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 
     BRDFSample s = brdfSample(wo, mat, randFloat3(path.seed));
 
-    if (!s.valid || s.pdf < 1e-6)
+    if (!s.valid || s.pdf < PDF_EPSILON)
     {
         path.alive = 0;
         pathStates[pathIdx] = path;

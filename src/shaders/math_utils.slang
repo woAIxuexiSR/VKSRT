@@ -3,6 +3,12 @@ module math_utils;
 
 public static const float PI = 3.14159265358979323846;
 
+// Shared epsilons for path-tracing style integrators.
+// COS_EPSILON: minimum |cos(theta)| for geometric/normal-weighting terms before a sample is discarded.
+// PDF_EPSILON: minimum pdf value before a sample is discarded (avoid division blow-up).
+public static const float COS_EPSILON = 1e-4;
+public static const float PDF_EPSILON = 1e-6;
+
 // Cosine-weighted hemisphere sampling (z-up)
 public float3 cosineSampleHemisphere(float2 u)
 {

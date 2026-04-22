@@ -6,6 +6,7 @@ import brdf;
 import onb;
 import rng;
 import math_utils;
+import camera;
 
 // --- Payload: closesthit returns geometry info, raygen does shading ---
 
@@ -16,12 +17,6 @@ struct RayPayload
     float3 hitPos : read(caller) : write(closesthit);
     float3 hitNormal : read(caller) : write(closesthit);
     int matIndex : read(caller) : write(closesthit);
-};
-
-struct CameraProperties
-{
-    float4x4 viewInverse;
-    float4x4 projInverse;
 };
 
 struct PushConstants
@@ -58,8 +53,8 @@ StructuredBuffer<Material> materials;
 [[vk::binding(6)]]
 StructuredBuffer<float> normalData;
 
-[[vk::binding(7)]]
-StructuredBuffer<float2> texcoords;
+// binding(7) = texcoords (bound by descriptor layout for pipeline uniformity,
+// but path tracing doesn't sample textures — no declaration needed here).
 
 [[vk::binding(8)]]
 StructuredBuffer<LightTriangle> lights;
@@ -112,20 +107,10 @@ void raygenMain()
     uint2 launchID = DispatchRaysIndex().xy;
     uint2 launchSize = DispatchRaysDimensions().xy;
 
-    uint seed = wangHash(uint(launchID.x * 1973u + launchID.y * 9277u + uint(pc.frameIndex) * 26699u) | 1u);
+    uint seed = seedFromPixel(launchID, uint(pc.frameIndex));
 
-    // Pixel jitter for anti-aliasing
-    float2 jitter = randFloat2(seed);
-    float2 pixelCenter = float2(launchID) + jitter;
-    float2 inUV = pixelCenter / float2(launchSize);
-    float2 d = inUV * 2.0 - 1.0;
-
-    float4 origin = mul(cam.viewInverse, float4(0, 0, 0, 1));
-    float4 target = mul(cam.projInverse, float4(d.x, d.y, 1, 1));
-    float4 direction = mul(cam.viewInverse, float4(normalize(target.xyz), 0));
-
-    float3 rayPos = origin.xyz;
-    float3 rayDir = normalize(direction.xyz);
+    float3 rayPos, rayDir;
+    generatePrimaryRay(cam, launchID, launchSize, seed, rayPos, rayDir);
 
     float3 L = float3(0.0);
     float3 beta = float3(1.0);
@@ -189,7 +174,7 @@ void raygenMain()
                     float totalArea = 0.0;
                     for (int li = 0; li < pc.lightCount; li++)
                         totalArea += lights[li].area;
-                    if (cosLight > 1e-4 && totalArea > 0.0)
+                    if (cosLight > COS_EPSILON && totalArea > 0.0)
                     {
                         float pdfLight = dist2 / (totalArea * cosLight);
                         misWeight = powerHeuristic(prevBsdfPdf, pdfLight);
@@ -239,7 +224,7 @@ void raygenMain()
             float cosHit = dot(shadingN, lightDir);
             float cosLight = abs(dot(lightNormal, -lightDir));
 
-            if (cosHit > 1e-4 && cosLight > 1e-4)
+            if (cosHit > COS_EPSILON && cosLight > COS_EPSILON)
             {
                 RayDesc shadowRay;
                 shadowRay.Origin = payload.hitPos;
@@ -283,7 +268,7 @@ void raygenMain()
 
         BRDFSample s = brdfSample(wo, mat, randFloat3(seed));
 
-        if (!s.valid || s.pdf < 1e-6)
+        if (!s.valid || s.pdf < PDF_EPSILON)
             break;
 
         // Track BRDF pdf for MIS on next emissive hit

@@ -79,7 +79,7 @@ public:
 
         // Pipeline::loadPipelineCache(device, std::string(PROJECT_ROOT) + "/build/pipeline_cache.bin");
 
-        RenderPassFactory::printRegistered();
+        // RenderPassFactory::printRegistered();
         loadConfig(configPath);
     }
 
