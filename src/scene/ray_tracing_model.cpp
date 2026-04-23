@@ -105,6 +105,57 @@ void RayTracingModel::buildMeshInfoBuffer()
     meshInfoBuffer->update(hitSBTRecords.data());
 }
 
+// --- Surface sampler (scene-wide, area-weighted, non-emissive + non-delta triangles) ---
+
+void RayTracingModel::buildSurfaceSampler()
+{
+    std::vector<SurfaceTriangle> tris;
+    float running = 0.0f;
+
+    for (size_t meshIdx = 0; meshIdx < hitSBTRecords.size(); meshIdx++)
+    {
+        const Material &m = materials[meshIdx];
+        if (m.type == MAT_EMISSIVE) continue;
+        if (m.type == MAT_DIELECTRIC) continue;               // delta
+        if (m.type == MAT_METAL && m.roughness < 0.001f) continue; // delta mirror
+
+        int vOff = hitSBTRecords[meshIdx].vertexOffset;
+        int iOff = hitSBTRecords[meshIdx].indexOffset;
+        int triCount = (meshIdx + 1 < hitSBTRecords.size())
+                           ? hitSBTRecords[meshIdx + 1].indexOffset - iOff
+                           : static_cast<int>(indices.size()) - iOff;
+
+        const glm::mat4 &xform = instanceTransforms[meshIdx];
+        for (int t = 0; t < triCount; t++)
+        {
+            glm::uvec3 tri = indices[iOff + t];
+            glm::vec3 v0 = glm::vec3(xform * glm::vec4(vertices[tri.x + vOff], 1.0f));
+            glm::vec3 v1 = glm::vec3(xform * glm::vec4(vertices[tri.y + vOff], 1.0f));
+            glm::vec3 v2 = glm::vec3(xform * glm::vec4(vertices[tri.z + vOff], 1.0f));
+            float a = 0.5f * glm::length(glm::cross(v1 - v0, v2 - v0));
+            if (a <= 0.0f) continue;
+            running += a;
+
+            SurfaceTriangle st{};
+            st.cumArea = running;
+            st.indexOffset = iOff + t;
+            st.vertexOffset = vOff;
+            st.matIndex = hitSBTRecords[meshIdx].materialIndex;
+            st.instanceIndex = static_cast<int>(meshIdx);
+            tris.push_back(st);
+        }
+    }
+
+    surfaceTriangleCount = static_cast<int>(tris.size());
+    totalSurfaceArea = running;
+    if (tris.empty()) tris.push_back(SurfaceTriangle{}); // guard against zero-size buffer
+
+    surfaceTriangleBuffer = std::make_unique<StorageBufferResource>(
+        device, sizeof(SurfaceTriangle) * tris.size(),
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+    surfaceTriangleBuffer->update(tris.data());
+}
+
 // --- BLAS ---
 
 void RayTracingModel::createBLAS()
@@ -369,12 +420,15 @@ void RayTracingModel::buildAccelerationStructures()
     buildLightBuffer();
     buildInstanceTransformBuffer();
     buildMeshInfoBuffer();
+    buildSurfaceSampler();
     finishBuild = true;
 }
 
 // --- Descriptor helpers ---
 
-std::vector<DescriptorLayoutBinding> RayTracingModel::getDescriptorBindings(VkShaderStageFlags stageFlags, bool includeMeshInfo) const
+std::vector<DescriptorLayoutBinding> RayTracingModel::getDescriptorBindings(VkShaderStageFlags stageFlags,
+                                                                           bool includeMeshInfo,
+                                                                           bool includeSurfaceSampler) const
 {
     std::vector<DescriptorLayoutBinding> bindings = {
         {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, stageFlags}, // TLAS
@@ -388,10 +442,13 @@ std::vector<DescriptorLayoutBinding> RayTracingModel::getDescriptorBindings(VkSh
     };
     if (includeMeshInfo)
         bindings.push_back({VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, stageFlags}); // meshInfo
+    if (includeSurfaceSampler)
+        bindings.push_back({VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, stageFlags}); // surfaceTriangles
     return bindings;
 }
 
-std::vector<std::vector<DescriptorInfo>> RayTracingModel::getDescriptorInfos(bool includeMeshInfo) const
+std::vector<std::vector<DescriptorInfo>> RayTracingModel::getDescriptorInfos(bool includeMeshInfo,
+                                                                             bool includeSurfaceSampler) const
 {
     std::vector<std::vector<DescriptorInfo>> infos = {
         {VkWriteDescriptorSetAccelerationStructureKHR{
@@ -406,5 +463,7 @@ std::vector<std::vector<DescriptorInfo>> RayTracingModel::getDescriptorInfos(boo
     };
     if (includeMeshInfo)
         infos.push_back({VkDescriptorBufferInfo{meshInfoBuffer->getBuffer(), 0, VK_WHOLE_SIZE}});
+    if (includeSurfaceSampler)
+        infos.push_back({VkDescriptorBufferInfo{surfaceTriangleBuffer->getBuffer(), 0, VK_WHOLE_SIZE}});
     return infos;
 }

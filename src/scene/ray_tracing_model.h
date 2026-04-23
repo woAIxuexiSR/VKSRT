@@ -34,7 +34,10 @@ private:
     std::unique_ptr<StorageBufferResource> lightBuffer;
     std::unique_ptr<StorageBufferResource> instanceTransformBuffer;
     std::unique_ptr<StorageBufferResource> meshInfoBuffer;
+    std::unique_ptr<StorageBufferResource> surfaceTriangleBuffer;
     int lightCount{0};
+    int surfaceTriangleCount{0};
+    float totalSurfaceArea{0.0f};
 
     std::vector<VkAccelerationStructureKHR> blas;
     std::vector<std::unique_ptr<StorageBufferResource>> blasBuffers;
@@ -57,6 +60,7 @@ private:
     void buildLightBuffer();
     void buildInstanceTransformBuffer();
     void buildMeshInfoBuffer();
+    void buildSurfaceSampler();
 
 public:
     RayTracingModel(Device &_d);
@@ -75,10 +79,16 @@ public:
     void buildAccelerationStructures();
 
     int getLightCount() const { return lightCount; }
+    int getSurfaceTriangleCount() const { return surfaceTriangleCount; }
+    float getTotalSurfaceArea() const { return totalSurfaceArea; }
     const std::vector<HitSBTRecord> &getHitSBTRecords() const { return hitSBTRecords; }
 
     // stageFlags: which shader stages need access (e.g. RAYGEN|CLOSEST_HIT for RT, COMPUTE for wavefront)
     // includeMeshInfo: append meshInfoBuffer binding/info (needed for ray-query-based passes)
-    std::vector<DescriptorLayoutBinding> getDescriptorBindings(VkShaderStageFlags stageFlags, bool includeMeshInfo = false) const;
-    std::vector<std::vector<DescriptorInfo>> getDescriptorInfos(bool includeMeshInfo = false) const;
+    // includeSurfaceSampler: append surfaceTriangleBuffer (Neural Radiosity surface sampling)
+    std::vector<DescriptorLayoutBinding> getDescriptorBindings(VkShaderStageFlags stageFlags,
+                                                               bool includeMeshInfo = false,
+                                                               bool includeSurfaceSampler = false) const;
+    std::vector<std::vector<DescriptorInfo>> getDescriptorInfos(bool includeMeshInfo = false,
+                                                                bool includeSurfaceSampler = false) const;
 };

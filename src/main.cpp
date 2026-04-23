@@ -173,13 +173,15 @@ private:
         // Create G-buffer (App-managed, shared across passes)
         gbuffer = std::make_unique<GBuffer>(device, swapChain->getExtent());
 
-        // Phase 2: Wire input slots + inject dependencies, then init (chain order)
+        // Phase 2: Wire input slots + inject dependencies, then init (chain order).
+        // setOfflineMode runs before init() so passes can branch allocation on the flag.
         PassImageSlot prevSlot{};
         for (auto &pass : passes)
         {
             pass->setCamera(&camera);
             pass->setGBuffer(gbuffer.get());
             pass->setScene(scene.get());
+            pass->setOfflineMode(offlineConfig.enabled);
             pass->setInputSlot(prevSlot);
             pass->init();
             prevSlot = pass->getOutputSlot();
@@ -188,11 +190,6 @@ private:
 
     PassImageSlot drawOffline()
     {
-        // Set blit pass to offline mode (renders to dedicated image with TRANSFER_SRC)
-        for (auto &pass : passes)
-            if (auto *blit = dynamic_cast<BlitPass *>(pass.get()))
-                blit->setOfflineMode(true);
-
         VkFenceCreateInfo fenceInfo{};
         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         VkFence fence;

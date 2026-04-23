@@ -9,19 +9,15 @@ BlitPass::BlitPass(Device &_d, SwapChain &_sc, const json &params)
 {
 }
 
-void BlitPass::setOfflineMode(bool offline)
+void BlitPass::init()
 {
-    offlineMode = offline;
-    if (offlineMode && !offlineImage)
+    if (offlineMode)
     {
         offlineImage = std::make_unique<ImageResource>(
             device, swapChain.getImageFormat(), swapChain.getExtent(),
             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
     }
-}
 
-void BlitPass::init()
-{
     blitPipeline = std::make_unique<GraphicsPipeline>(
         device, 1,
         std::vector<DescriptorLayoutBinding>{

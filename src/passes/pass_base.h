@@ -48,6 +48,7 @@ protected:
     Device &device;
     SwapChain &swapChain;
     bool enabled = true;
+    bool offlineMode = false;
 
     PassImageSlot initInputSlot;
 
@@ -92,6 +93,12 @@ public:
     virtual void setCamera(Camera *) {}
     virtual void setGBuffer(GBuffer *) {}
     virtual void setScene(RayTracingModel *) {}
+
+    // Offline mode switch. Called by Application::drawOffline before the first recordCommand.
+    // The base tracks the flag in `offlineMode`; override to react to the transition (e.g.,
+    // BlitPass allocates a readback image). Always call through or set the field yourself.
+    virtual void setOfflineMode(bool offline) { offlineMode = offline; }
+    bool isOfflineMode() const { return offlineMode; }
 
     // --- Image slot wiring ---
     void setInputSlot(const PassImageSlot &slot) { initInputSlot = slot; }

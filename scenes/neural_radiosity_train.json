@@ -1,0 +1,43 @@
+{
+  "camera-": {
+    "pos": [0.5, -1.5, 0.5],
+    "target": [0.5, 0.5, 0.5],
+    "fov": 60
+  },
+  "scene-": {
+    "type": "models",
+    "models": [
+      {
+        "path": "cornell_box/cornell_box.obj",
+        "scale": 0.0018,
+        "translation": [1.0, 0, 0],
+        "rotation": [-90, 180, 0]
+      }
+    ]
+  },
+  "scene": { "type": "cornell_box" },
+  "passes": [
+    {
+      "type": "neural_radiosity",
+      "params": {
+        "batchSize": 2048,
+        "rhsSamples": 4,
+        "network": {
+          "encoding": [
+            { "type": "hashgrid", "inputDim": 3, "numLevels": 8, "featuresPerLevel": 2,
+              "tableSize": 65536, "coarsestResolution": 16, "finestResolution": 512 },
+            { "type": "sh", "inputDim": 3, "degree": 3 },
+            { "type": "sh", "inputDim": 3, "degree": 3 },
+            { "type": "identity", "inputDim": 3 }
+          ],
+          "mlp": { "outputSize": 3, "hiddenSize": 64, "hiddenLayers": 2 },
+          "useEMA": true,
+          "emaAlpha": 0.99,
+          "learningRate": 0.001,
+          "savePath": "models/neural_radiosity.vknn"
+        }
+      }
+    },
+    { "type": "blit" }
+  ]
+}

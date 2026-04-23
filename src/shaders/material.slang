@@ -48,3 +48,14 @@ public struct LightTriangle
     public int matIndex;
     public int instanceIndex;
 };
+
+// Neural Radiosity scene-wide surface-triangle entry. Layout must match C++
+// SurfaceTriangle in src/scene/material.h (20 bytes).
+public struct SurfaceTriangle
+{
+    public float cumArea;      // cumulative area prefix
+    public int indexOffset;
+    public int vertexOffset;
+    public int matIndex;
+    public int instanceIndex;
+};

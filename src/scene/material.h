@@ -35,3 +35,16 @@ struct LightTriangle
     int instanceIndex;   // TLAS instance index (for transform lookup in NEE)
 };
 static_assert(sizeof(LightTriangle) == 20, "LightTriangle must be 20 bytes to match Slang layout");
+
+// Scene-wide surface-triangle sampling table: one entry per non-emissive, non-delta
+// triangle, in cumulative-area order. Used by Neural Radiosity to sample surface
+// points area-weighted via binary search on cumArea.
+struct SurfaceTriangle
+{
+    float cumArea;       // cumulative area up to and including this triangle
+    int indexOffset;     // absolute triangle index in global index buffer
+    int vertexOffset;    // vertex offset in global vertex buffer
+    int matIndex;        // material index
+    int instanceIndex;   // TLAS instance index (for transform lookup)
+};
+static_assert(sizeof(SurfaceTriangle) == 20, "SurfaceTriangle must be 20 bytes to match Slang layout");
