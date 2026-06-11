@@ -1,0 +1,19 @@
+{
+  "scene": {
+    "type": "cornell_box"
+  },
+  "passes": [
+    {
+      "type": "icv",
+      "params": {
+        "maxDepth": 8,
+        "rrDepth": 3,
+        "a": 0.5,
+        "gaussianSigma": 1.0
+      }
+    },
+    { "type": "taa" },
+    { "type": "tonemap" },
+    { "type": "blit" }
+  ]
+}

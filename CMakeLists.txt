@@ -80,6 +80,8 @@ endfunction()
 set(RT_MULTI_ENTRY_SHADERS
     "ray_tracing/ray_tracing"
     "path_tracing/path_tracing"
+    "icv/icv_anchor"
+    "icv/icv_edge"
     "light_tracing/light_tracing"
     "nrc/nrc"
 )
